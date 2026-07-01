@@ -27,5 +27,7 @@ COPY --chown=user . $HOME/app
 
 EXPOSE 7860
 
-# Start everything
-CMD ["sh", "-c", "gunicorn app:app --bind 0.0.0.0:7860 & python bot.py & python ping.py"]
+ENV PYTHONUNBUFFERED=1
+
+# Start everything. Make bot.py run in foreground so if it crashes, the container logs it.
+CMD ["sh", "-c", "gunicorn app:app --bind 0.0.0.0:7860 & python ping.py & python bot.py"]
