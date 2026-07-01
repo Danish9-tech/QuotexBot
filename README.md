@@ -1,3 +1,11 @@
+---
+title: QuotexBot
+emoji: 📈
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+pinned: false
+---
 # ✨ Quotex Auto Trade Bot 🚀💰
 
 Quotex Auto Trade Bot is a Python-based automation tool designed to facilitate trading on the Quotex platform. It allows users to add and manage multiple accounts, configure trade settings, and toggle automated trading features.
