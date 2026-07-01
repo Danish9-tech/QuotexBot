@@ -1,0 +1,11 @@
+python-dotenv
+pyrofork
+tgcrypto
+motor
+colorama
+playwright-stealth==1.0.6
+git+https://github.com/cleitonleonel/pyquotex.git
+dnspython
+flask
+gunicorn
+requests
