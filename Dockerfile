@@ -1,18 +1,29 @@
-FROM mcr.microsoft.com/playwright/python:v1.40.0-jammy
+FROM python:3.12
 
-# Playwright image already has 'pwuser' as UID 1000
-USER pwuser
-ENV HOME=/home/pwuser \
-    PATH=/home/pwuser/.local/bin:$PATH
+# Install git (needed for pyquotex)
+RUN apt-get update && apt-get install -y git
+
+# Install playwright globally as root to install system dependencies
+RUN pip install playwright
+RUN playwright install-deps chromium
+
+# Hugging Face requires running as a non-root user (UID 1000)
+RUN useradd -m -u 1000 user
+USER user
+ENV HOME=/home/user \
+    PATH=/home/user/.local/bin:$PATH
 
 WORKDIR $HOME/app
 
-# Copy requirements and install
-COPY --chown=pwuser requirements.txt .
+# Copy requirements and install them as the user
+COPY --chown=user requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application
-COPY --chown=pwuser . $HOME/app
+# Install the actual Chromium browser for the user
+RUN playwright install chromium
+
+# Copy the rest of the code
+COPY --chown=user . $HOME/app
 
 EXPOSE 7860
 
