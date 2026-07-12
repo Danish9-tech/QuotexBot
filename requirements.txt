@@ -1,6 +1,5 @@
 python-dotenv
 pyrofork
-tgcrypto
 motor
 colorama
 playwright-stealth==1.0.6

@@ -4,3 +4,4 @@ __pycache__/
 browser/
 session.json
 .venv/
+*.session

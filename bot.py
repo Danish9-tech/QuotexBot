@@ -15,6 +15,7 @@ from functools import wraps
 from typing import Optional, Dict, Any, Tuple, List
 from dotenv import load_dotenv
 import os
+from groq_analyzer import get_groq_trading_signal
 # --- DNS Resolver Patch ---
 
 USER_AGENT = "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/119.0"
@@ -122,13 +123,15 @@ COOLDOWN_MINUTES = 3
 # --- Database Setup ---
 async def setup_database():
     """Initializes MongoDB connection and collections."""
-    global db, users_db, quotex_accounts_db, trade_settings_db
+    global db, users_db, quotex_accounts_db, trade_settings_db, trade_history_db, market_data_db
     try:
         client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URI)
         db = client['quotexTraderBot'] # Database name
         users_db = db['users']
         quotex_accounts_db = db['quotex_accounts']
         trade_settings_db = db['trade_settings']
+        trade_history_db = db['trade_history']
+        market_data_db = db['market_data']
         # Create indexes for faster lookups
         await users_db.create_index("user_id", unique=True)
         await quotex_accounts_db.create_index([("user_id", 1), ("email", 1)], unique=True)
@@ -512,7 +515,8 @@ async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type:
 
         # Create instance UNDER the patch
         logger.info(f"Creating new Quotex client instance for {email} UNDER PATCH")
-        qx_client = Quotex(email=email, password=password)
+        quotex_host = os.getenv("QUOTEX_HOST", "quotex.io")
+        qx_client = Quotex(email=email, password=password, host=quotex_host)
 
         # Add context *before* connect call
         logger.info(f"Adding user {user_id} to active_otp_requests BEFORE connect (under patch).")
@@ -932,14 +936,15 @@ async def callback_query_handler(client: Client, callback_query: CallbackQuery):
          else:
              text += "\nCurrent Assets:\n"
              for i, asset in enumerate(assets):
-                 text += f"{i+1}. `{asset['name']}` (Amt: {asset['amount']}, Dur: {asset['duration']}s)\n"
+                 status = "🟢" if asset.get('is_active', True) else "🔴"
+                 text += f"{i+1}. {status} `{asset['name']}` (Amt: {asset['amount']}, Dur: {asset['duration']}s)\n"
 
          keyboard = [
               [InlineKeyboardButton("➕ Add Asset", callback_data=f"asset_add:{account_doc_id}")],
-               # Add buttons to remove specific assets if list is not empty
          ]
          if assets:
-             keyboard.append([InlineKeyboardButton("➖ Remove Asset", callback_data=f"asset_remove_select:{account_doc_id}")]) # Leads to selection
+             keyboard.append([InlineKeyboardButton("🔄 Toggle Assets (ON/OFF)", callback_data=f"asset_toggle_select:{account_doc_id}")])
+             keyboard.append([InlineKeyboardButton("➖ Remove Asset", callback_data=f"asset_remove_select:{account_doc_id}")])
 
          keyboard.append(back_button(f"qx_manage:{account_doc_id}"))
          await message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
@@ -957,6 +962,41 @@ async def callback_query_handler(client: Client, callback_query: CallbackQuery):
             reply_markup=ForceReply(selective=True),
             parse_mode=enums.ParseMode.DEFAULT
         )
+
+    elif data.startswith("asset_toggle_select:"):
+         account_doc_id = data.split(":")[1]
+         settings = await get_or_create_trade_settings(account_doc_id)
+         assets = settings.get("assets", [])
+         if not assets:
+              await message.edit_text("No assets to toggle.", reply_markup=InlineKeyboardMarkup([back_button(f"asset_manage:{account_doc_id}")]))
+              return
+         
+         keyboard = []
+         for i, asset in enumerate(assets):
+             status_emoji = "🟢 ON" if asset.get('is_active', True) else "🔴 OFF"
+             keyboard.append([InlineKeyboardButton(f"{status_emoji} | {asset['name']}", callback_data=f"asset_toggle:{account_doc_id}:{i}")])
+         
+         keyboard.append(back_button(f"asset_manage:{account_doc_id}"))
+         await message.edit_text("Select an asset to turn it ON or OFF:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data.startswith("asset_toggle:"):
+         _, account_doc_id, index = data.split(":")
+         index = int(index)
+         settings = await get_or_create_trade_settings(account_doc_id)
+         assets = settings.get("assets", [])
+         if 0 <= index < len(assets):
+             current_status = assets[index].get('is_active', True)
+             assets[index]['is_active'] = not current_status
+             await update_trade_setting(account_doc_id, {"assets": assets})
+         
+         # Re-render the toggle menu
+         keyboard = []
+         for i, asset in enumerate(assets):
+             status_emoji = "🟢 ON" if asset.get('is_active', True) else "🔴 OFF"
+             keyboard.append([InlineKeyboardButton(f"{status_emoji} | {asset['name']}", callback_data=f"asset_toggle:{account_doc_id}:{i}")])
+         
+         keyboard.append(back_button(f"asset_manage:{account_doc_id}"))
+         await message.edit_text("Select an asset to turn it ON or OFF:", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data.startswith("asset_remove_select:"):
          account_doc_id = data.split(":")[1]
@@ -1792,45 +1832,74 @@ active_trading_tasks: Dict[str, asyncio.Task] = {} # {account_doc_id: task_insta
 
 # --- REPLACE THE EXISTING run_trading_loop_for_account FUNCTION ---
 
-async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size: int) -> Optional[str]:
+async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size: int, account_doc_id: str) -> Tuple[Optional[str], str]:
     """
-    Fetches the last completed candle and determines its direction ('call', 'put', 'doji').
-    Internal helper for the trading loop.
+    Fetches candles and uses Groq AI to determine direction.
     """
-    if not qx_client or not qx_client.check_connect: # Should check connection status appropriately
+    if not qx_client or not qx_client.check_connect:
         logger.warning(f"[{asset_name}] QX client not connected in _get_candle_direction.")
-        return None
+        return None, ""
     try:
         end_time = time.time()
-        offset_seconds = 0 # Usually fetches last ~1min needed for 60s candle check
-        # Important: Use the candle_size passed from settings
-        candles = await qx_client.get_candles(asset_name, end_time, offset_seconds, candle_size) # Request 2 candles to better identify last completed one
-        # Note: `amount` and `end_time` args might vary based on specific pyquotex version/method used
+        offset_seconds = 0
+        # Request 60 candles to ensure enough data for TA-Lib indicators (EMA 50 needs 50)
+        # Using 60 to have a small buffer
+        # Wait, get_candles parameter order: asset_name, end_time, offset_seconds, amount
+        # Wait! Is it amount or size? In the original code it says `candle_size`. Let's assume it passes the number of candles requested.
+        candles = await qx_client.get_candles(asset_name, end_time, offset_seconds, candle_size) 
 
         if candles and isinstance(candles, list) and len(candles) > 0:
-             # Often the last candle is incomplete, second-to-last is the target
-             target_candle = None
-             if len(candles) > 1 and all(k in candles[-2] for k in ['open', 'close']):
-                  target_candle = candles[-1] # Prefer second to last
-             elif len(candles) >= 1 and all(k in candles[-1] for k in ['open', 'close']):
-                 target_candle = candles[-1] # Use last if second to last invalid or only one received
+            # Fetch recent trade history for AI Memory
+            recent_trades = []
+            if 'trade_history_db' in globals() and trade_history_db is not None:
+                cursor = trade_history_db.find({"account_doc_id": str(account_doc_id), "asset": asset_name}).sort("timestamp", -1).limit(3)
+                recent_trades = await cursor.to_list(length=3)
 
-             if target_candle:
-                open_price = target_candle['open']
-                close_price = target_candle['close']
-                logger.debug(f"[{asset_name}] Candle Check: Open={open_price}, Close={close_price}")
-                if close_price > open_price: return 'call'
-                elif close_price < open_price: return 'put'
-                else: return 'doji'
-             else:
-                  logger.warning(f"[{asset_name}] Could not identify valid candle structure from response: {candles}")
-                  return None
+            # Send to Groq for analysis
+            logger.info(f"[{asset_name}] Sending {len(candles)} candles to Groq AI (with {len(recent_trades)} memory slots)...")
+            ai_result = await get_groq_trading_signal(candles, asset_name, candle_size, recent_trades)
+            
+            signal = ai_result.get("signal", "doji")
+            confidence = ai_result.get("confidence", 0)
+            reason = ai_result.get("reason", "No reason provided")
+            
+            logger.info(f"[{asset_name}] AI Reason: {reason}")
+            
+            # Save raw data to MongoDB for future model training
+            try:
+                if 'market_data_db' in globals() and market_data_db is not None:
+                    training_record = {
+                        "timestamp": datetime.datetime.utcnow(),
+                        "asset": asset_name,
+                        "candle_size": candle_size,
+                        "raw_candles": candles[-50:],  # Save the last 50 candles for training context
+                        "ai_signal": signal,
+                        "ai_confidence": confidence,
+                        "ai_reason": reason
+                    }
+                    await market_data_db.insert_one(training_record)
+            except Exception as db_err:
+                logger.error(f"Failed to save market data to MongoDB: {db_err}")
+            
+            # Execute ONLY if confidence is high and it's a clear signal
+            if signal in ['call', 'put'] and confidence >= 60:
+                logger.info(f"[{asset_name}] High Confidence AI Signal ({confidence}%): {signal.upper()}")
+                return signal, reason
+            else:
+                logger.info(f"[{asset_name}] AI suggests DOJI/Wait. Signal: {signal}, Confidence: {confidence}%")
+                return 'doji', reason
         else:
-            logger.warning(f"[{asset_name}] No candle data received or empty list. Response: {candles}")
-            return None
+            logger.warning(f"[{asset_name}] No candle data received or empty list.")
+            return None, ""
     except Exception as e:
-        logger.error(f"[{asset_name}] Error fetching candle data: {e}", exc_info=True)
-        return None
+        logger.error(f"[{asset_name}] Error fetching candle data or calling AI: {e}", exc_info=True)
+        error_str = str(e).lower()
+        if "closed" in error_str or "connection" in error_str or "rejected" in error_str:
+            logger.error(f"[{asset_name}] Websocket is dead in candle fetch. Nuking cache for {account_doc_id}.")
+            global active_quotex_clients
+            if account_doc_id in active_quotex_clients:
+                del active_quotex_clients[account_doc_id]
+        return None, ""
 
 async def _check_asset_open_and_get_name(qx_client: Quotex, asset_name_original: str) -> Optional[str]:
     """Checks if asset or its OTC variant is open, returns the name of the open asset or None."""
@@ -1921,8 +1990,13 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                 logger.error(f"[Trading Task {account_doc_id}]: Cannot get Quotex client ({status_msg}). Pausing for 60s.")
                 await asyncio.sleep(60)
                 continue # Try again next iteration
-            # Ensure client is connected (get_quotex_client usually handles this)
-            # if not await qx_client.check_connect(): ... (optional extra check)
+            # Ensure client is connected
+            if not await qx_client.check_connect():
+                logger.error(f"[Trading Task {account_doc_id}]: Client disconnected. Removing from cache.")
+                if account_doc_id in active_quotex_clients:
+                    del active_quotex_clients[account_doc_id]
+                await asyncio.sleep(10)
+                continue
 
             # 4. --- Trading Cycle Start ---
             logger.debug(f"[Trading Task {account_doc_id}]: Starting trade processing cycle...")
@@ -1952,6 +2026,11 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
 
                  if not asset_name_original: continue # Skip if asset structure is invalid
 
+                 # 0. Check if the asset is active
+                 if not asset_info.get('is_active', True):
+                     logger.info(f"[{asset_name_original}] Skipping: Asset is currently turned OFF by user.")
+                     continue
+
                  # Get Martingale state for *this specific asset* from our working copy
                  asset_mtg = active_martingale_state.get(asset_name_original, {'current_amount': base_amount, 'consecutive_losses': 0})
                  current_trade_amount = asset_mtg['current_amount']
@@ -1968,6 +2047,16 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                      await asyncio.sleep(0.5) # Small delay before next asset
                      continue # Go to next asset in the list
                     
+                 # 4a2. Check Profit Payout Percentage
+                 try:
+                     # Get payout for 1M timeframe as baseline
+                     payout = qx_client.get_payout_by_asset(asset_name_open, "1")
+                     if payout is not None and payout < 0:
+                         logger.warning(f"[{asset_name_open}] Skipping: Payout is too low ({payout}%).")
+                         await asyncio.sleep(0.5)
+                         continue
+                 except Exception as e:
+                     logger.warning(f"[{asset_name_open}] Could not fetch payout percentage: {e}")
 
                  # --- Update MTG state key if OTC name is different ---
                  if asset_name_open != asset_name_original and asset_name_original in active_martingale_state:
@@ -1982,7 +2071,7 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
 
 
                  # 4b. Get Trading Direction
-                 direction = await _get_candle_direction(qx_client, asset_name_open, candle_size)
+                 direction, ai_reason = await _get_candle_direction(qx_client, asset_name_open, candle_size, account_doc_id)
                  if direction is None:
                       logger.warning(f"[{asset_name_open}] Skipping: Could not determine trade direction.")
                       await asyncio.sleep(0.5)
@@ -2010,13 +2099,31 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                            await asyncio.sleep(duration_or_timeframe_value + 2) # Increased buffer slightly
 
                            logger.info(f"[{asset_name_open}] Checking result for Trade ID: {trade_id}...")
-                           # IMPORTANT: Use buy_info which might contain necessary identifiers for check_win_v3/v4/get_order
-                           # Adapt based on the exact check_win version you are using. Assume it takes ID.
-                           win_result = await qx_client.check_win(buy_info["id"]) # Or check_win, check_win_v3 depending on library version and details needed
+                           # Wrap in timeout to prevent infinite hangs
+                           try:
+                               win_result = await asyncio.wait_for(qx_client.check_win(buy_info["id"]), timeout=15.0)
+                           except asyncio.TimeoutError:
+                               logger.warning(f"[{asset_name_open}] check_win timed out for Trade ID: {trade_id}")
+                               win_result = False # Default to False if we can't confirm
 
                            # Get profit might depend on check_win or need separate call
                            profit_or_loss_amount = qx_client.get_profit() # Returns positive for win, negative for loss, 0 for tie
                            trade_placed_success = True # Mark as successful execution pathway
+
+                           # Save to AI Trade History Database
+                           if 'trade_history_db' in globals() and trade_history_db is not None:
+                               trade_record = {
+                                   "account_doc_id": str(account_doc_id),
+                                   "asset": asset_name_open,
+                                   "ai_signal": direction,
+                                   "ai_reason": ai_reason,
+                                   "result": "WIN" if win_result else ("TIE" if profit_or_loss_amount == 0 else "LOSS"),
+                                   "profit": profit_or_loss_amount,
+                                   "amount": current_trade_amount,
+                                   "timestamp": datetime.datetime.now(datetime.timezone.utc)
+                               }
+                               await trade_history_db.insert_one(trade_record)
+                               logger.debug(f"[{asset_name_open}] Saved trade execution to AI memory database.")
 
                            if win_result:
                                 logger.info(f"[{asset_name_open}] Trade Result: WIN! Profit: {profit_or_loss_amount:.2f}")
@@ -2043,7 +2150,8 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                                     await update_trade_setting(account_doc_id, {
                                         f"martingale_state.{asset_name_open}.consecutive_losses": asset_mtg['consecutive_losses']
                                     })
-                                    asset_mtg['current_amount'] = round(asset_mtg['current_amount'] * MARTINGALE_MULTIPLIER, 2)
+                                    # Disabled Martingale - Always stick to the base amount
+                                    asset_mtg['current_amount'] = base_amount
                                     await update_trade_setting(account_doc_id, {
                                         f"martingale_state.{asset_name_open}.current_amount": asset_mtg['current_amount']
                                     })
@@ -2077,6 +2185,12 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
 
                  except Exception as trade_exec_error:
                      logger.error(f"[{asset_name_open}] Unexpected error during trade execution/check: {trade_exec_error}", exc_info=True)
+                     error_str = str(trade_exec_error).lower()
+                     if "closed" in error_str or "connection" in error_str or "rejected" in error_str:
+                         logger.warning(f"[{asset_name_open}] Hard connection crash detected mid-loop. Nuking client from cache to force fresh login.")
+                         if account_doc_id in active_quotex_clients:
+                             del active_quotex_clients[account_doc_id]
+                         break # Break out of asset loop to start a fresh cycle
                      # Consider if connection should be dropped or retried
 
                  # 4d. Update Martingale state IN THE WORKING COPY
@@ -2119,7 +2233,7 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
 
             # Wait a bit before starting the *next full cycle* unless in cooldown
             if time.time() >= active_cooldown_until:
-                 await asyncio.sleep(5) # Wait 5 seconds before next check
+                 await asyncio.sleep(60) # Wait 60 seconds before next check to save tokens
 
         except asyncio.CancelledError:
              logger.info(f"[Trading Task {account_doc_id}]: Loop cancelled.")
@@ -2127,8 +2241,7 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                  await disconnect_quotex_client(account_doc_id) # Clean up connection
              except Exception as cleanup_error:
                  logger.error(f"[Trading Task {account_doc_id}]: Error during cleanup: {cleanup_error}", exc_info=True)
-             finally:
-                 break # Exit the while loop
+             break # Exit the while loop
         except ConnectionError as ce: # Catch connection errors from get_quotex_client or within loop
              logger.error(f"[Trading Task {account_doc_id}]: ConnectionError encountered: {ce}. Pausing for 60s.")
              await disconnect_quotex_client(account_doc_id) # Ensure cleanup on error
