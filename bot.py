@@ -80,6 +80,8 @@ OWNER_ID = int(os.getenv("OWNER_ID", 987654321))  # Replace with a default value
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s')
 logger = logging.getLogger(__name__)
 logging.getLogger("pyrofork").setLevel(logging.WARNING) # Reduce pyrogram verbosity
+logging.getLogger("pyquotex").setLevel(logging.INFO) # Hide noisy websocket logs
+logging.getLogger("websockets").setLevel(logging.INFO)
 
 try:
     import dns.resolver
