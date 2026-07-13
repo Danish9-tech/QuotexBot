@@ -100,7 +100,7 @@ You must respond ONLY with a valid JSON object in this exact format. Do not incl
                     "content": prompt
                 }
             ],
-            model="llama3-70b-8192",
+            model="mixtral-8x7b-32768",
             temperature=0.1,  # Low temperature for highly logical/consistent answers
             max_tokens=200,
             response_format={"type": "json_object"}
