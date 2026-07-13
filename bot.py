@@ -542,8 +542,9 @@ async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type:
             logger.error("Connection attempt timed out.")
             connection_check, connection_reason = False, "Timeout during connection"
         except Exception as e:
-                logger.error(f"Error during connection in thread: {e}", exc_info=True)
-                connection_check, connection_reason = False, str(e)
+            logger.error(f"Error during connection: {e}", exc_info=True)
+            connection_check, connection_reason = False, str(e)
+            
         # Deactivate patch state immediately after
         patch_state['expecting_pin'] = False
         logger.info("Patch state set to NOT expect PIN.")
