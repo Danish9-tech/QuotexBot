@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import pandas as pd
+import aiohttp
 from groq import AsyncGroq
 from dotenv import load_dotenv
 
@@ -21,11 +22,8 @@ except Exception as e:
 async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: int = 60, recent_trades: list = None) -> dict:
     """
     Takes a list of candle dictionaries, calculates indicators, 
-    injects past trade memory, and asks Groq for a trading decision.
+    injects past trade memory, and asks Groq or OpenRouter for a trading decision.
     """
-    if not client:
-        return {"signal": "doji", "confidence": 0, "reason": "Groq client not initialized"}
-
     if not candles or len(candles) < 50:
         logger.warning(f"[{asset_name}] Not enough candles for AI analysis (need at least 50).")
         return {"signal": "doji", "confidence": 0, "reason": "Not enough data"}
@@ -88,18 +86,59 @@ You must respond ONLY with a valid JSON object in this exact format. Do not incl
 {{"signal": "call" | "put" | "doji", "confidence": 0-100, "reason": "Brief explanation of the setup"}}
 """
 
-        # Call Groq API
+        messages = [
+            {
+                "role": "system",
+                "content": "You are a highly logical AI trading assistant that strictly outputs JSON."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+
+        # Use OpenRouter if API key is present
+        openrouter_key = os.getenv("OPENROUTER_API_KEY")
+        if openrouter_key:
+            logger.info(f"[{asset_name}] Using OpenRouter AI (DeepSeek) for analysis...")
+            headers = {
+                "Authorization": f"Bearer {openrouter_key}",
+                "HTTP-Referer": "https://github.com/Danish9-tech/QuotexBot", # Optional
+                "X-Title": "Quotex AI Bot", # Optional
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": "deepseek/deepseek-chat:free",
+                "messages": messages,
+                "temperature": 0.1,
+                "response_format": {"type": "json_object"}
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=20.0) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        result_text = data['choices'][0]['message']['content']
+                        # Sometimes OpenRouter DeepSeek adds markdown block backticks despite json_object mode
+                        result_text = result_text.strip()
+                        if result_text.startswith("```json"):
+                            result_text = result_text[7:]
+                        if result_text.endswith("```"):
+                            result_text = result_text[:-3]
+                        result_json = json.loads(result_text.strip())
+                        logger.info(f"[{asset_name}] OpenRouter AI Prediction: {result_json}")
+                        return result_json
+                    else:
+                        error_text = await resp.text()
+                        raise Exception(f"OpenRouter API Error: {resp.status} - {error_text}")
+
+        # Fallback to Groq if OpenRouter is not configured
+        if not client:
+            return {"signal": "doji", "confidence": 0, "reason": "No AI client initialized (Add OPENROUTER_API_KEY or GROQ_API_KEY)"}
+            
+        logger.info(f"[{asset_name}] Using Groq AI (Mixtral) for analysis...")
         response = await client.chat.completions.create(
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a highly logical AI trading assistant that strictly outputs JSON."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
+            messages=messages,
             model="mixtral-8x7b-32768",
             temperature=0.1,  # Low temperature for highly logical/consistent answers
             max_tokens=200,
@@ -113,5 +152,5 @@ You must respond ONLY with a valid JSON object in this exact format. Do not incl
         return result_json
 
     except Exception as e:
-        logger.error(f"[{asset_name}] Error during Groq AI analysis: {e}", exc_info=True)
+        logger.error(f"[{asset_name}] Error during AI analysis: {e}", exc_info=True)
         return {"signal": "doji", "confidence": 0, "reason": f"AI Error: {str(e)}"}
