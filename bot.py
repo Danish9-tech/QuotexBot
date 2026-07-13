@@ -1840,7 +1840,9 @@ async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size:
         # Using 60 to have a small buffer
         # Wait, get_candles parameter order: asset_name, end_time, offset_seconds, amount
         # Wait! Is it amount or size? In the original code it says `candle_size`. Let's assume it passes the number of candles requested.
-        candles = await qx_client.get_candles(asset_name, end_time, offset_seconds, candle_size) 
+        # Fetch 200 candles worth of seconds
+        amount_of_seconds = 200 * candle_size 
+        candles = await qx_client.get_historical_candles(asset_name, amount_of_seconds, candle_size) 
 
         if candles and isinstance(candles, list) and len(candles) > 0:
             # Fetch recent trade history for AI Memory
