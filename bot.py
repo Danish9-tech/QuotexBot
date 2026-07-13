@@ -531,21 +531,15 @@ async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type:
         logger.info(f"Attempting connection for {email} (aggressive patch active)...")
         # Run the connection process in a separate thread to avoid blocking the main event loop
 
-        def connect_in_thread():
-            """Wrapper to run the connect method in a thread."""
-            return asyncio.run(qx_client.connect())
-
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(connect_in_thread)
-            try:
-                connection_check, connection_reason = await asyncio.wait_for(
-                    asyncio.wrap_future(future),  # Wrap the thread future for asyncio compatibility
-                    timeout=180.0
-                )
-            except asyncio.TimeoutError:
-                logger.error("Connection attempt timed out.")
-                connection_check, connection_reason = False, "Timeout during connection"
-            except Exception as e:
+        try:
+            connection_check, connection_reason = await asyncio.wait_for(
+                qx_client.connect(),
+                timeout=180.0
+            )
+        except asyncio.TimeoutError:
+            logger.error("Connection attempt timed out.")
+            connection_check, connection_reason = False, "Timeout during connection"
+        except Exception as e:
                 logger.error(f"Error during connection in thread: {e}", exc_info=True)
                 connection_check, connection_reason = False, str(e)
         # Deactivate patch state immediately after
@@ -561,7 +555,7 @@ async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type:
             settings = await get_or_create_trade_settings(account_doc_id)
             account_mode = settings.get("account_mode", "PRACTICE")
             try:
-                qx_client.change_account(account_mode)
+                await qx_client.change_account(account_mode)
                 logger.info(f"Switched Quotex account {email} to {account_mode} mode.")
             except Exception as e_mode:
                 logger.error(f"Failed to switch account {email} to {account_mode}: {e_mode}", exc_info=True)
