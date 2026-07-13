@@ -510,10 +510,14 @@ async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type:
         # Create instance without the broken patch
         logger.info(f"Creating new Quotex client instance for {email}")
         quotex_host = os.getenv("QUOTEX_HOST", "quotex.io")
-        qx_client = Quotex(email=email, password=password, host=quotex_host)
-
-        # Bind the native async callback for 2FA PIN
-        qx_client.api.on_otp_callback = handle_potential_pin_input
+        
+        # Bind the native async callback for 2FA PIN directly in the constructor
+        qx_client = Quotex(
+            email=email, 
+            password=password, 
+            host=quotex_host,
+            on_otp_callback=handle_potential_pin_input
+        )
 
         # Add context *before* connect call
         logger.info(f"Adding user {user_id} to active_otp_requests BEFORE connect.")
