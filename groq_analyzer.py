@@ -77,7 +77,7 @@ MARKET DATA:
 
 YOUR TRADING RULES:
 1. Identify if the current trend is bullish (close > EMA_50) or bearish (close < EMA_50).
-2. Look for reversals if RSI_14 is > 70 (Overbought) or < 30 (Oversold), OR if price touches the outer Bollinger Bands (BBU_20_2.0 or BBL_20_2.0).
+2. Look for reversals if RSI_14 is > 60 (Overbought) or < 40 (Oversold), OR if price touches the outer Bollinger Bands (BBU_20_2.0 or BBL_20_2.0).
 3. Look for strong candlestick patterns (Engulfing, Pin bar) on the very last candle.
 4. If your Recent Trades Memory shows you lost a trade recently with a specific setup, DO NOT repeat that mistake. Adjust your strategy.
 5. If there is no clear setup, signal "doji" (which means wait).
