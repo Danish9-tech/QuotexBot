@@ -507,31 +507,21 @@ async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type:
     is_patched = False
 
     try:
-        # --- Apply AGGRESSIVE patch BEFORE creating instance ---
-        logger.warning("Applying AGGRESSIVE builtins.input patch (using input_wrapper)...")
-        # *** USE THE CORRECT WRAPPER ***
-        patcher = patch('builtins.input', input_wrapper)
-        patcher.start()
-        is_patched = True
-        logger.info("Aggressive builtins.input patch STARTED.")
-
-        # Create instance UNDER the patch
-        logger.info(f"Creating new Quotex client instance for {email} UNDER PATCH")
+        # Create instance without the broken patch
+        logger.info(f"Creating new Quotex client instance for {email}")
         quotex_host = os.getenv("QUOTEX_HOST", "quotex.io")
         qx_client = Quotex(email=email, password=password, host=quotex_host)
 
+        # Bind the native async callback for 2FA PIN
+        qx_client.api.on_otp_callback = handle_potential_pin_input
+
         # Add context *before* connect call
-        logger.info(f"Adding user {user_id} to active_otp_requests BEFORE connect (under patch).")
+        logger.info(f"Adding user {user_id} to active_otp_requests BEFORE connect.")
         if not bot_instance: raise ConnectionAbortedError("Bot instance not available for OTP context.")
         active_otp_requests[user_id] = {'qx_client': qx_client, 'doc_id': account_doc_id}
 
-        # Activate patch state
-        patch_state['expecting_pin'] = True
-        logger.info("Patch state set to expect PIN.")
-
-        # Call connect UNDER the patch
-        logger.info(f"Attempting connection for {email} (aggressive patch active)...")
-        # Run the connection process in a separate thread to avoid blocking the main event loop
+        # Call connect directly on main event loop
+        logger.info(f"Attempting connection for {email}...")
 
         try:
             connection_check, connection_reason = await asyncio.wait_for(
