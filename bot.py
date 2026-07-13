@@ -2094,13 +2094,14 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                            logger.info(f"[{asset_name_open}] Checking result for Trade ID: {trade_id}...")
                            # Wrap in timeout to prevent infinite hangs
                            try:
-                               win_result = await asyncio.wait_for(qx_client.check_win(buy_info["id"]), timeout=15.0)
+                               check_status, check_profit = await asyncio.wait_for(qx_client.check_win(buy_info["id"]), timeout=15.0)
+                               win_result = (check_status == "win")
+                               profit_or_loss_amount = check_profit
                            except asyncio.TimeoutError:
                                logger.warning(f"[{asset_name_open}] check_win timed out for Trade ID: {trade_id}")
                                win_result = False # Default to False if we can't confirm
+                               profit_or_loss_amount = 0.0
 
-                           # Get profit might depend on check_win or need separate call
-                           profit_or_loss_amount = qx_client.get_profit() # Returns positive for win, negative for loss, 0 for tie
                            trade_placed_success = True # Mark as successful execution pathway
 
                            # Save to AI Trade History Database
