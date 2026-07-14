@@ -2220,7 +2220,7 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                          await asyncio.sleep(wait_seconds)
 
                  # Small delay before processing next asset to avoid overwhelming API/system
-                 await asyncio.sleep(1)
+                 await asyncio.sleep(5)
 
             # --- End of Asset Loop ---
             logger.debug(f"[Trading Task {account_doc_id}]: Finished asset processing cycle.")
