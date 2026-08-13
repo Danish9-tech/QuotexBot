@@ -928,7 +928,7 @@ async def callback_query_handler(client: Client, callback_query: CallbackQuery):
              text += "\nCurrent Assets:\n"
              for i, asset in enumerate(assets):
                  status = "🟢" if asset.get('is_active', True) else "🔴"
-                 text += f"{i+1}. {status} `{asset['name']}` (Amt: {asset['amount']}, Dur: {asset['duration']}s)\n"
+                 text += f"{i+1}. {status} `{asset['name']}` (Amt: {asset.get('amount', asset.get('base_amount', 1))}, Dur: {asset.get('duration', 60)}s)\n"
 
          keyboard = [
               [InlineKeyboardButton("➕ Add Asset", callback_data=f"asset_add:{account_doc_id}")],
