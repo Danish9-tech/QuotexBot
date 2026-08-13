@@ -103,13 +103,18 @@ You must respond ONLY with a valid JSON object in this exact format. Do not incl
             {"role": "user", "content": prompt}
         ]
 
+        # Use Custom API (like Bynara or OpenRouter) if keys are present
         keys = get_openrouter_keys()
         
         if keys:
             attempts = 0
+            # Allow user to specify custom base URL and model in .env
+            api_url = os.getenv("AI_API_URL", "https://openrouter.ai/api/v1/chat/completions")
+            ai_model = os.getenv("AI_MODEL", "openrouter/free")
+            
             while attempts < len(keys):
                 current_key = keys[CURRENT_KEY_INDEX]
-                logger.info(f"[{asset_name}] Using OpenRouter Free Auto-Router (Key #{CURRENT_KEY_INDEX + 1}/{len(keys)})...")
+                logger.info(f"[{asset_name}] Using Custom AI API ({ai_model}) (Key #{CURRENT_KEY_INDEX + 1}/{len(keys)})...")
                 
                 headers = {
                     "Authorization": f"Bearer {current_key}",
@@ -118,14 +123,14 @@ You must respond ONLY with a valid JSON object in this exact format. Do not incl
                     "Content-Type": "application/json"
                 }
                 payload = {
-                    "model": "openrouter/free",
+                    "model": ai_model,
                     "messages": messages,
                     "temperature": 0.1,
                     "response_format": {"type": "json_object"}
                 }
                 
                 async with aiohttp.ClientSession() as session:
-                    async with session.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=20.0) as resp:
+                    async with session.post(api_url, headers=headers, json=payload, timeout=20.0) as resp:
                         if resp.status == 200:
                             data = await resp.json()
                             result_text = data['choices'][0]['message']['content'].strip()
@@ -134,21 +139,21 @@ You must respond ONLY with a valid JSON object in this exact format. Do not incl
                             if result_text.endswith("```"):
                                 result_text = result_text[:-3]
                             result_json = json.loads(result_text.strip())
-                            logger.info(f"[{asset_name}] OpenRouter AI Prediction: {result_json}")
+                            logger.info(f"[{asset_name}] AI Prediction: {result_json}")
                             return result_json
                         elif resp.status in [429, 402]:
                             error_text = await resp.text()
-                            logger.warning(f"[{asset_name}] OpenRouter Key #{CURRENT_KEY_INDEX + 1} hit rate limit (429/402). Rotating to next key...")
+                            logger.warning(f"[{asset_name}] API Key #{CURRENT_KEY_INDEX + 1} hit rate limit (429/402). Rotating to next key...")
                             CURRENT_KEY_INDEX = (CURRENT_KEY_INDEX + 1) % len(keys)
                             attempts += 1
                         else:
                             error_text = await resp.text()
-                            raise Exception(f"OpenRouter API Error: {resp.status} - {error_text}")
+                            raise Exception(f"AI API Error: {resp.status} - {error_text}")
             
-            logger.error(f"[{asset_name}] ALL OpenRouter keys are currently rate-limited! Waiting for reset.")
+            logger.error(f"[{asset_name}] ALL API keys are currently rate-limited! Waiting for reset.")
             return {"signal": "doji", "confidence": 0, "reason": "All API keys exhausted. Waiting for daily reset."}
 
-        # Fallback to Groq if no OpenRouter keys
+        # Fallback to Groq if no custom keys
         if not client:
             return {"signal": "doji", "confidence": 0, "reason": "No AI client initialized (Add OPENROUTER_KEYS or GROQ_API_KEY)"}
             
