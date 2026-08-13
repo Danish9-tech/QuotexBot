@@ -2044,8 +2044,8 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                  try:
                      # Get payout for 1M timeframe as baseline
                      payout = qx_client.get_payout_by_asset(asset_name_open, "1")
-                     if payout is not None and payout < 0:
-                         logger.warning(f"[{asset_name_open}] Skipping: Payout is too low ({payout}%).")
+                     if payout is not None and payout < 80:
+                         logger.warning(f"[{asset_name_open}] Skipping: Payout is too low ({payout}% - Must be 80%+).")
                          await asyncio.sleep(0.5)
                          continue
                  except Exception as e:
