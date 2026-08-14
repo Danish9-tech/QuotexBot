@@ -86,13 +86,13 @@ MARKET DATA:
 {memory_context}
 
 YOUR TRADING RULES:
-1. Identify if the current trend is bullish (close > EMA_50) or bearish (close < EMA_50).
-2. Look for reversals if RSI_14 is > 60 (Overbought) or < 40 (Oversold), OR if price touches the outer Bollinger Bands (BBU_20_2.0 or BBL_20_2.0).
-3. Look for strong candlestick patterns (Engulfing, Pin bar) on the very last candle.
-4. If your Recent Trades Memory shows you lost a trade recently with a specific setup, DO NOT repeat that mistake. Adjust your strategy.
-5. If there is no clear setup, signal "doji" (which means wait).
-6. If there is a strong buy setup, signal "call".
-7. If there is a strong sell setup, signal "put".
+1. THE RSI WALL: If RSI_14 is > 70, you are FORBIDDEN from signaling "call". If RSI_14 is < 30, you are FORBIDDEN from signaling "put".
+2. THE CHOP ZONE: If RSI_14 is between 45 and 55 AND price is near the Middle Bollinger Band (SMA_20), the market is chopping. You MUST signal "doji".
+3. THE REVERSAL RULE: Do not guess reversals early. Only trade with the trend (EMA_50) unless the price has violently pierced the outer Bollinger Band (BBU_20_2.0 or BBL_20_2.0) and is pulling back inside.
+4. If your Recent Trades Memory shows you lost a trade recently with a specific setup, DO NOT repeat that mistake. Wait for a different setup.
+5. If there is no clear, mathematically perfect setup, signal "doji" (which means wait/skip).
+6. If there is a strong buy setup that respects all rules, signal "call".
+7. If there is a strong sell setup that respects all rules, signal "put".
 
 You must respond ONLY with a valid JSON object in this exact format. Do not include any markdown formatting or extra text:
 {{"signal": "call" | "put" | "doji", "confidence": 0-100, "reason": "Brief explanation of the setup"}}
