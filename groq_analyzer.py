@@ -86,11 +86,13 @@ MARKET DATA:
 {memory_context}
 
 YOUR TRADING RULES:
-1. THE RSI WALL: If RSI_14 is > 70, you are FORBIDDEN from signaling "call". If RSI_14 is < 30, you are FORBIDDEN from signaling "put".
-2. THE CHOP ZONE: If RSI_14 is between 45 and 55 AND price is near the Middle Bollinger Band (SMA_20), the market is chopping. You MUST signal "doji".
+1. THE RSI WALL: 
+   - If RSI_14 is > 70, your ONLY options are "put" or "doji". You are strictly required to NEVER output "call".
+   - If RSI_14 is < 30, your ONLY options are "call" or "doji". You are strictly required to NEVER output "put".
+2. THE CHOP ZONE: If RSI_14 is between 45 and 55 AND price is near the Middle Bollinger Band (SMA_20), your ONLY option is to signal "doji".
 3. THE REVERSAL RULE: Do not guess reversals early. Only trade with the trend (EMA_50) unless the price has violently pierced the outer Bollinger Band (BBU_20_2.0 or BBL_20_2.0) and is pulling back inside.
 4. If your Recent Trades Memory shows you lost a trade recently with a specific setup, DO NOT repeat that mistake. Wait for a different setup.
-5. If there is no clear, mathematically perfect setup, signal "doji" (which means wait/skip).
+5. If there is no clear, mathematically perfect setup, your ONLY option is to signal "doji" (which means wait/skip).
 6. If there is a strong buy setup that respects all rules, signal "call".
 7. If there is a strong sell setup that respects all rules, signal "put".
 
