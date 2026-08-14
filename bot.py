@@ -2037,7 +2037,7 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                  asset_name_open = await _check_asset_open_and_get_name(qx_client, asset_name_original)
                  if not asset_name_open:
                      logger.warning(f"[{asset_name_original}] Skipping: Asset or OTC variant not open/available.")
-                     await asyncio.sleep(0.5) # Small delay before next asset
+                     await asyncio.sleep(5) # Small delay before next asset
                      continue # Go to next asset in the list
                     
                  # 4a2. Check Profit Payout Percentage
@@ -2046,7 +2046,7 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                      payout = qx_client.get_payout_by_asset(asset_name_open, "1")
                      if payout is not None and payout < 80:
                          logger.warning(f"[{asset_name_open}] Skipping: Payout is too low ({payout}% - Must be 80%+).")
-                         await asyncio.sleep(0.5)
+                         await asyncio.sleep(5)
                          continue
                  except Exception as e:
                      logger.warning(f"[{asset_name_open}] Could not fetch payout percentage: {e}")
@@ -2067,11 +2067,11 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                  direction, ai_reason = await _get_candle_direction(qx_client, asset_name_open, candle_size, account_doc_id)
                  if direction is None:
                       logger.warning(f"[{asset_name_open}] Skipping: Could not determine trade direction.")
-                      await asyncio.sleep(0.5)
+                      await asyncio.sleep(5)
                       continue
                  if direction == 'doji':
                       logger.info(f"[{asset_name_open}] Skipping: Last candle was Doji.")
-                      await asyncio.sleep(0.5)
+                      await asyncio.sleep(5)
                       continue
                  logger.info(f"[{asset_name_open}] Trade Direction Signal: {direction.upper()}")
 
