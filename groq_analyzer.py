@@ -87,16 +87,15 @@ MARKET DATA:
 
 {memory_context}
 
-YOUR TRADING RULES:
-1. THE RSI WALL (Do not catch falling knives!):
-   - If RSI_14 is > 70, the market is overbought, but DO NOT blindly signal "put" because strong trends stay overbought for a long time! Your ONLY options are "doji" (wait) or "put" (if and ONLY if there is a massive red reversal candle confirming the drop). You must NEVER output "call".
-   - If RSI_14 is < 30, the market is oversold, but DO NOT blindly signal "call". Your ONLY options are "doji" (wait) or "call" (if and ONLY if there is a massive green reversal candle confirming the bounce). You must NEVER output "put".
-2. THE CHOP ZONE: If RSI_14 is between 45 and 55 AND price is near the Middle Bollinger Band (SMA_20), your ONLY option is to signal "doji".
-3. THE REVERSAL RULE: Do not guess reversals early. Only trade with the trend (EMA_50) unless the price has violently pierced the outer Bollinger Band (BBU_20_2.0 or BBL_20_2.0) and is pulling back inside.
-4. If your Recent Trades Memory shows you lost a trade recently with a specific setup, DO NOT repeat that mistake. Wait for a different setup.
-5. If there is no clear, mathematically perfect setup, your ONLY option is to signal "doji" (which means wait/skip).
-6. If there is a strong buy setup that respects all rules, signal "call".
-7. If there is a strong sell setup that respects all rules, signal "put".
+YOUR TRADING RULES FOR OTC MARKETS:
+1. OTC UNSTOPPABLE MOMENTUM: Quotex OTC markets do not behave normally. When RSI hits extreme levels, the broker algorithm pushes the trend forever to liquidate reversal traders. You must NEVER trade against strong momentum.
+   - If RSI_14 is > 70, the bullish trend is UNSTOPPABLE. Your ONLY options are "call" (trend continuation) or "doji" (wait). You are strictly forbidden from guessing a reversal ("put").
+   - If RSI_14 is < 30, the bearish trend is UNSTOPPABLE. Your ONLY options are "put" (trend continuation) or "doji" (wait). You are strictly forbidden from guessing a reversal ("call").
+2. THE CHOP ZONE: If RSI_14 is between 40 and 60, the market is chopping sideways and retail traders lose their money here. You MUST signal "doji".
+3. If your Recent Trades Memory shows you lost a trade recently with a specific setup, DO NOT repeat that mistake. Wait for a different setup.
+4. If there is no clear, mathematically perfect momentum setup, your ONLY option is to signal "doji" (which means wait/skip).
+5. If there is a strong buy setup that respects all rules, signal "call".
+6. If there is a strong sell setup that respects all rules, signal "put".
 
 You must respond ONLY with a valid JSON object in this exact format. Do not include any markdown formatting or extra text:
 {{"signal": "call" | "put" | "doji", "confidence": 0-100, "reason": "Brief explanation of the setup"}}
@@ -144,14 +143,14 @@ You must respond ONLY with a valid JSON object in this exact format. Do not incl
                                 result_text = result_text[:-3]
                             result_json = json.loads(result_text.strip())
                             
-                            # PROGRAMMATIC OVERRIDE TO STOP HALLUCINATIONS
-                            if current_rsi > 70 and result_json.get("signal") == "call":
+                            # PROGRAMMATIC OVERRIDE FOR OTC MOMENTUM
+                            if current_rsi > 70 and result_json.get("signal") == "put":
                                 result_json["signal"] = "doji"
-                                result_json["reason"] = f"OVERRIDE: AI hallucinated a call. RSI is {current_rsi:.2f} (Overbought). Forced skip to prevent loss."
-                            elif current_rsi < 30 and result_json.get("signal") == "put":
+                                result_json["reason"] = f"OVERRIDE: AI hallucinated a reversal put. RSI is {current_rsi:.2f} (Extreme Momentum UP). Forced skip."
+                            elif current_rsi < 30 and result_json.get("signal") == "call":
                                 result_json["signal"] = "doji"
-                                result_json["reason"] = f"OVERRIDE: AI hallucinated a put. RSI is {current_rsi:.2f} (Oversold). Forced skip to prevent loss."
-                            elif 45 <= current_rsi <= 55 and result_json.get("signal") in ["call", "put"]:
+                                result_json["reason"] = f"OVERRIDE: AI hallucinated a reversal call. RSI is {current_rsi:.2f} (Extreme Momentum DOWN). Forced skip."
+                            elif 40 <= current_rsi <= 60 and result_json.get("signal") in ["call", "put"]:
                                 result_json["signal"] = "doji"
                                 result_json["reason"] = f"OVERRIDE: Market is chopping (RSI {current_rsi:.2f}). Forced skip to prevent 50/50 coinflip."
                             
@@ -185,14 +184,14 @@ You must respond ONLY with a valid JSON object in this exact format. Do not incl
         result_text = response.choices[0].message.content
         result_json = json.loads(result_text)
         
-        # PROGRAMMATIC OVERRIDE TO STOP HALLUCINATIONS
-        if current_rsi > 70 and result_json.get("signal") == "call":
+        # PROGRAMMATIC OVERRIDE FOR OTC MOMENTUM
+        if current_rsi > 70 and result_json.get("signal") == "put":
             result_json["signal"] = "doji"
-            result_json["reason"] = f"OVERRIDE: AI hallucinated a call. RSI is {current_rsi:.2f} (Overbought). Forced skip to prevent loss."
-        elif current_rsi < 30 and result_json.get("signal") == "put":
+            result_json["reason"] = f"OVERRIDE: AI hallucinated a reversal put. RSI is {current_rsi:.2f} (Extreme Momentum UP). Forced skip."
+        elif current_rsi < 30 and result_json.get("signal") == "call":
             result_json["signal"] = "doji"
-            result_json["reason"] = f"OVERRIDE: AI hallucinated a put. RSI is {current_rsi:.2f} (Oversold). Forced skip to prevent loss."
-        elif 45 <= current_rsi <= 55 and result_json.get("signal") in ["call", "put"]:
+            result_json["reason"] = f"OVERRIDE: AI hallucinated a reversal call. RSI is {current_rsi:.2f} (Extreme Momentum DOWN). Forced skip."
+        elif 40 <= current_rsi <= 60 and result_json.get("signal") in ["call", "put"]:
             result_json["signal"] = "doji"
             result_json["reason"] = f"OVERRIDE: Market is chopping (RSI {current_rsi:.2f}). Forced skip to prevent 50/50 coinflip."
         
