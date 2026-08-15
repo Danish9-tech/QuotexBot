@@ -562,6 +562,10 @@ async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type:
             active_quotex_clients[account_doc_id] = qx_client
             return qx_client, f"Connected successfully in {account_mode} mode."
         else:
+            if qx_client:
+                try: await qx_client.close()
+                except: pass
+            
             # ... (Failure logic: check reasons, handle Invalid credentials, Token rejected, PIN/Auth errors) ...
             logger.error(f"Quotex connection explicitly failed for {email}. Reason: {connection_reason}")
             reason_str = str(connection_reason) if connection_reason else "Unknown reason"
