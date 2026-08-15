@@ -69,6 +69,8 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
         if df.empty:
             return {"signal": "doji", "confidence": 0, "reason": "Not enough data after TA calculation"}
             
+        current_rsi = df['RSI_14'].iloc[-1]
+        
         recent_data = df.tail(10).to_dict(orient="records")
         market_context = json.dumps(recent_data, indent=2)
         
@@ -141,6 +143,18 @@ You must respond ONLY with a valid JSON object in this exact format. Do not incl
                             if result_text.endswith("```"):
                                 result_text = result_text[:-3]
                             result_json = json.loads(result_text.strip())
+                            
+                            # PROGRAMMATIC OVERRIDE TO STOP HALLUCINATIONS
+                            if current_rsi > 70 and result_json.get("signal") == "call":
+                                result_json["signal"] = "doji"
+                                result_json["reason"] = f"OVERRIDE: AI hallucinated a call. RSI is {current_rsi:.2f} (Overbought). Forced skip to prevent loss."
+                            elif current_rsi < 30 and result_json.get("signal") == "put":
+                                result_json["signal"] = "doji"
+                                result_json["reason"] = f"OVERRIDE: AI hallucinated a put. RSI is {current_rsi:.2f} (Oversold). Forced skip to prevent loss."
+                            elif 45 <= current_rsi <= 55 and result_json.get("signal") in ["call", "put"]:
+                                result_json["signal"] = "doji"
+                                result_json["reason"] = f"OVERRIDE: Market is chopping (RSI {current_rsi:.2f}). Forced skip to prevent 50/50 coinflip."
+                            
                             logger.info(f"[{asset_name}] AI Prediction: {result_json}")
                             return result_json
                         elif resp.status in [429, 402]:
@@ -170,6 +184,17 @@ You must respond ONLY with a valid JSON object in this exact format. Do not incl
 
         result_text = response.choices[0].message.content
         result_json = json.loads(result_text)
+        
+        # PROGRAMMATIC OVERRIDE TO STOP HALLUCINATIONS
+        if current_rsi > 70 and result_json.get("signal") == "call":
+            result_json["signal"] = "doji"
+            result_json["reason"] = f"OVERRIDE: AI hallucinated a call. RSI is {current_rsi:.2f} (Overbought). Forced skip to prevent loss."
+        elif current_rsi < 30 and result_json.get("signal") == "put":
+            result_json["signal"] = "doji"
+            result_json["reason"] = f"OVERRIDE: AI hallucinated a put. RSI is {current_rsi:.2f} (Oversold). Forced skip to prevent loss."
+        elif 45 <= current_rsi <= 55 and result_json.get("signal") in ["call", "put"]:
+            result_json["signal"] = "doji"
+            result_json["reason"] = f"OVERRIDE: Market is chopping (RSI {current_rsi:.2f}). Forced skip to prevent 50/50 coinflip."
         
         logger.info(f"[{asset_name}] Groq AI Prediction: {result_json}")
         return result_json
