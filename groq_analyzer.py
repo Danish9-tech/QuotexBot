@@ -92,10 +92,10 @@ YOUR TRADING RULES FOR OTC MARKETS (BREAKOUT SWEET SPOT STRATEGY):
    - If RSI_14 is > 70: the broker is BAITING momentum traders. You MUST signal "doji". Do NOT place any trade.
    - If RSI_14 is < 30: the broker is BAITING momentum traders. You MUST signal "doji". Do NOT place any trade.
 2. THE BREAKOUT SWEET SPOT: The ONLY zones where trading is profitable are:
-   - BULLISH BREAKOUT (RSI 65-70): The trend is just starting to accelerate but has NOT reached the trap zone yet. This is the ONLY zone where you are allowed to signal "call".
-   - BEARISH BREAKOUT (RSI 30-35): The trend is just starting to accelerate downward but has NOT reached the trap zone yet. This is the ONLY zone where you are allowed to signal "put".
-3. THE CHOP ZONE: If RSI_14 is between 35 and 65, the market has NO clear direction. You MUST signal "doji". There are ZERO exceptions.
-4. CONFIDENCE RULES: You must ONLY set confidence above 80 when ALL of the following are true: (a) RSI is in a sweet spot zone (65-70 for call, 30-35 for put), (b) Price is above EMA_50 for calls or below EMA_50 for puts, (c) The setup does not match any recent losing trade. If even ONE condition is missing, your confidence MUST be below 80.
+   - BULLISH BREAKOUT (RSI 60-70): The trend is accelerating upward but has NOT reached the trap zone yet. This is the ONLY zone where you are allowed to signal "call".
+   - BEARISH BREAKOUT (RSI 30-40): The trend is accelerating downward but has NOT reached the trap zone yet. This is the ONLY zone where you are allowed to signal "put".
+3. THE CHOP ZONE: If RSI_14 is between 40 and 60, the market has NO clear direction. You MUST signal "doji". There are ZERO exceptions.
+4. CONFIDENCE RULES: You must ONLY set confidence above 80 when ALL of the following are true: (a) RSI is in a sweet spot zone (60-70 for call, 30-40 for put), (b) Price is above EMA_50 for calls or below EMA_50 for puts, (c) The setup does not match any recent losing trade. If even ONE condition is missing, your confidence MUST be below 80.
 5. PATIENCE OVER PROFIT: It is better to skip 100 trades than to take 1 bad trade. When in doubt, ALWAYS signal "doji".
 6. If your Recent Trades Memory shows you lost a trade recently with a similar setup, signal "doji" immediately.
 
@@ -156,15 +156,15 @@ You must respond ONLY with a valid JSON object in this exact format. Do not incl
                                     result_json["signal"] = "doji"
                                     result_json["confidence"] = 0
                                     result_json["reason"] = f"OVERRIDE: RSI {current_rsi:.2f} is in the OTC TRAP ZONE (<30). Broker baits traders here. Forced skip."
-                                elif 35 <= current_rsi < 65:
+                                elif 40 <= current_rsi < 60:
                                     result_json["signal"] = "doji"
                                     result_json["confidence"] = 0
                                     result_json["reason"] = f"OVERRIDE: RSI {current_rsi:.2f} is in CHOP ZONE. No direction. Forced skip."
-                                elif 65 <= current_rsi <= 70 and sig == "put":
+                                elif 60 <= current_rsi <= 70 and sig == "put":
                                     result_json["signal"] = "doji"
                                     result_json["confidence"] = 0
                                     result_json["reason"] = f"OVERRIDE: RSI {current_rsi:.2f} is in BULLISH sweet spot. Put is wrong direction. Forced skip."
-                                elif 30 <= current_rsi <= 35 and sig == "call":
+                                elif 30 <= current_rsi <= 40 and sig == "call":
                                     result_json["signal"] = "doji"
                                     result_json["confidence"] = 0
                                     result_json["reason"] = f"OVERRIDE: RSI {current_rsi:.2f} is in BEARISH sweet spot. Call is wrong direction. Forced skip."
@@ -210,15 +210,15 @@ You must respond ONLY with a valid JSON object in this exact format. Do not incl
                 result_json["signal"] = "doji"
                 result_json["confidence"] = 0
                 result_json["reason"] = f"OVERRIDE: RSI {current_rsi:.2f} is in the OTC TRAP ZONE (<30). Broker baits traders here. Forced skip."
-            elif 35 <= current_rsi < 65:
+            elif 40 <= current_rsi < 60:
                 result_json["signal"] = "doji"
                 result_json["confidence"] = 0
                 result_json["reason"] = f"OVERRIDE: RSI {current_rsi:.2f} is in CHOP ZONE. No direction. Forced skip."
-            elif 65 <= current_rsi <= 70 and sig == "put":
+            elif 60 <= current_rsi <= 70 and sig == "put":
                 result_json["signal"] = "doji"
                 result_json["confidence"] = 0
                 result_json["reason"] = f"OVERRIDE: RSI {current_rsi:.2f} is in BULLISH sweet spot. Put is wrong direction. Forced skip."
-            elif 30 <= current_rsi <= 35 and sig == "call":
+            elif 30 <= current_rsi <= 40 and sig == "call":
                 result_json["signal"] = "doji"
                 result_json["confidence"] = 0
                 result_json["reason"] = f"OVERRIDE: RSI {current_rsi:.2f} is in BEARISH sweet spot. Call is wrong direction. Forced skip."
