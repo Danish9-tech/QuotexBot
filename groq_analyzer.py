@@ -87,15 +87,15 @@ MARKET DATA:
 
 {memory_context}
 
-YOUR TRADING RULES FOR OTC MARKETS:
-1. OTC UNSTOPPABLE MOMENTUM: Quotex OTC markets do not behave normally. When RSI hits extreme levels, the broker algorithm pushes the trend forever to liquidate reversal traders. You must NEVER trade against strong momentum.
+YOUR TRADING RULES FOR OTC MARKETS (PATIENCE IS PROFIT):
+1. OTC UNSTOPPABLE MOMENTUM: Quotex OTC markets are controlled by broker algorithms. When RSI hits extreme levels, the broker pushes the trend forever to liquidate reversal traders. You must NEVER trade against strong momentum.
    - If RSI_14 is > 70, the bullish trend is UNSTOPPABLE. Your ONLY options are "call" (trend continuation) or "doji" (wait). You are strictly forbidden from guessing a reversal ("put").
    - If RSI_14 is < 30, the bearish trend is UNSTOPPABLE. Your ONLY options are "put" (trend continuation) or "doji" (wait). You are strictly forbidden from guessing a reversal ("call").
-2. THE CHOP ZONE: If RSI_14 is between 40 and 60, the market is chopping sideways and retail traders lose their money here. You MUST signal "doji".
-3. If your Recent Trades Memory shows you lost a trade recently with a specific setup, DO NOT repeat that mistake. Wait for a different setup.
-4. If there is no clear, mathematically perfect momentum setup, your ONLY option is to signal "doji" (which means wait/skip).
-5. If there is a strong buy setup that respects all rules, signal "call".
-6. If there is a strong sell setup that respects all rules, signal "put".
+2. THE CHOP ZONE (EXPANDED): If RSI_14 is between 35 and 65, the market has NO clear direction. Retail traders lose 100% of their money trading in this zone. You MUST signal "doji". There are ZERO exceptions to this rule.
+3. CONFIDENCE RULES: You must ONLY set confidence above 80 when ALL of the following are true: (a) RSI is in an extreme zone (above 70 or below 30), (b) Price action confirms the direction with strong candles, (c) The setup does not match any recent losing trade. If even ONE condition is missing, your confidence MUST be below 80.
+4. PATIENCE OVER PROFIT: It is better to skip 100 trades and miss opportunities than to take 1 bad trade and lose money. When in doubt, ALWAYS signal "doji". The best traders in the world only trade 2-3 times per day.
+5. If your Recent Trades Memory shows you lost a trade recently with a similar setup, signal "doji" immediately.
+6. If there is a strong momentum setup that respects ALL rules above, signal "call" or "put" with confidence 80+.
 
 You must respond ONLY with a valid JSON object in this exact format. Do not include any markdown formatting or extra text:
 {{"signal": "call" | "put" | "doji", "confidence": 0-100, "reason": "Brief explanation of the setup"}}
@@ -150,9 +150,10 @@ You must respond ONLY with a valid JSON object in this exact format. Do not incl
                             elif current_rsi < 30 and result_json.get("signal") == "call":
                                 result_json["signal"] = "doji"
                                 result_json["reason"] = f"OVERRIDE: AI hallucinated a reversal call. RSI is {current_rsi:.2f} (Extreme Momentum DOWN). Forced skip."
-                            elif 40 <= current_rsi <= 60 and result_json.get("signal") in ["call", "put"]:
+                            elif 35 <= current_rsi <= 65 and result_json.get("signal") in ["call", "put"]:
                                 result_json["signal"] = "doji"
-                                result_json["reason"] = f"OVERRIDE: Market is chopping (RSI {current_rsi:.2f}). Forced skip to prevent 50/50 coinflip."
+                                result_json["confidence"] = 0
+                                result_json["reason"] = f"OVERRIDE: Market is chopping (RSI {current_rsi:.2f}). No clear direction. Forced skip."
                             
                             logger.info(f"[{asset_name}] AI Prediction: {result_json}")
                             return result_json
@@ -191,9 +192,10 @@ You must respond ONLY with a valid JSON object in this exact format. Do not incl
         elif current_rsi < 30 and result_json.get("signal") == "call":
             result_json["signal"] = "doji"
             result_json["reason"] = f"OVERRIDE: AI hallucinated a reversal call. RSI is {current_rsi:.2f} (Extreme Momentum DOWN). Forced skip."
-        elif 40 <= current_rsi <= 60 and result_json.get("signal") in ["call", "put"]:
+        elif 35 <= current_rsi <= 65 and result_json.get("signal") in ["call", "put"]:
             result_json["signal"] = "doji"
-            result_json["reason"] = f"OVERRIDE: Market is chopping (RSI {current_rsi:.2f}). Forced skip to prevent 50/50 coinflip."
+            result_json["confidence"] = 0
+            result_json["reason"] = f"OVERRIDE: Market is chopping (RSI {current_rsi:.2f}). No clear direction. Forced skip."
         
         logger.info(f"[{asset_name}] Groq AI Prediction: {result_json}")
         return result_json

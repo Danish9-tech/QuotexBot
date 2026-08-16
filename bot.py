@@ -1878,12 +1878,12 @@ async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size:
             except Exception as db_err:
                 logger.error(f"Failed to save market data to MongoDB: {db_err}")
             
-            # Execute ONLY if confidence is high and it's a clear signal
-            if signal in ['call', 'put'] and confidence >= 60:
-                logger.info(f"[{asset_name}] High Confidence AI Signal ({confidence}%): {signal.upper()}")
+            # Execute ONLY if confidence is very high and it's a clear signal
+            if signal in ['call', 'put'] and confidence >= 80:
+                logger.info(f"[{asset_name}] HIGH CONFIDENCE AI Signal ({confidence}%): {signal.upper()} - EXECUTING TRADE!")
                 return signal, reason
             else:
-                logger.info(f"[{asset_name}] AI suggests DOJI/Wait. Signal: {signal}, Confidence: {confidence}%")
+                logger.info(f"[{asset_name}] AI suggests DOJI/Wait. Signal: {signal}, Confidence: {confidence}% (Need 80%+)")
                 return 'doji', reason
         else:
             logger.warning(f"[{asset_name}] No candle data received or empty list.")
