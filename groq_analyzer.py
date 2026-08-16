@@ -87,15 +87,17 @@ MARKET DATA:
 
 {memory_context}
 
-YOUR TRADING RULES FOR OTC MARKETS (PATIENCE IS PROFIT):
-1. OTC UNSTOPPABLE MOMENTUM: Quotex OTC markets are controlled by broker algorithms. When RSI hits extreme levels, the broker pushes the trend forever to liquidate reversal traders. You must NEVER trade against strong momentum.
-   - If RSI_14 is > 70, the bullish trend is UNSTOPPABLE. Your ONLY options are "call" (trend continuation) or "doji" (wait). You are strictly forbidden from guessing a reversal ("put").
-   - If RSI_14 is < 30, the bearish trend is UNSTOPPABLE. Your ONLY options are "put" (trend continuation) or "doji" (wait). You are strictly forbidden from guessing a reversal ("call").
-2. THE CHOP ZONE (EXPANDED): If RSI_14 is between 35 and 65, the market has NO clear direction. Retail traders lose 100% of their money trading in this zone. You MUST signal "doji". There are ZERO exceptions to this rule.
-3. CONFIDENCE RULES: You must ONLY set confidence above 80 when ALL of the following are true: (a) RSI is in an extreme zone (above 70 or below 30), (b) Price action confirms the direction with strong candles, (c) The setup does not match any recent losing trade. If even ONE condition is missing, your confidence MUST be below 80.
-4. PATIENCE OVER PROFIT: It is better to skip 100 trades and miss opportunities than to take 1 bad trade and lose money. When in doubt, ALWAYS signal "doji". The best traders in the world only trade 2-3 times per day.
-5. If your Recent Trades Memory shows you lost a trade recently with a similar setup, signal "doji" immediately.
-6. If there is a strong momentum setup that respects ALL rules above, signal "call" or "put" with confidence 80+.
+YOUR TRADING RULES FOR OTC MARKETS (BREAKOUT SWEET SPOT STRATEGY):
+1. THE OTC TRAP: Quotex OTC markets are controlled by broker algorithms. The broker BAITS traders at extreme RSI levels (above 70 or below 30) by reversing the price exactly during the 60-second trade window. You must NEVER trade at extreme RSI levels.
+   - If RSI_14 is > 70: the broker is BAITING momentum traders. You MUST signal "doji". Do NOT place any trade.
+   - If RSI_14 is < 30: the broker is BAITING momentum traders. You MUST signal "doji". Do NOT place any trade.
+2. THE BREAKOUT SWEET SPOT: The ONLY zones where trading is profitable are:
+   - BULLISH BREAKOUT (RSI 65-70): The trend is just starting to accelerate but has NOT reached the trap zone yet. This is the ONLY zone where you are allowed to signal "call".
+   - BEARISH BREAKOUT (RSI 30-35): The trend is just starting to accelerate downward but has NOT reached the trap zone yet. This is the ONLY zone where you are allowed to signal "put".
+3. THE CHOP ZONE: If RSI_14 is between 35 and 65, the market has NO clear direction. You MUST signal "doji". There are ZERO exceptions.
+4. CONFIDENCE RULES: You must ONLY set confidence above 80 when ALL of the following are true: (a) RSI is in a sweet spot zone (65-70 for call, 30-35 for put), (b) Price is above EMA_50 for calls or below EMA_50 for puts, (c) The setup does not match any recent losing trade. If even ONE condition is missing, your confidence MUST be below 80.
+5. PATIENCE OVER PROFIT: It is better to skip 100 trades than to take 1 bad trade. When in doubt, ALWAYS signal "doji".
+6. If your Recent Trades Memory shows you lost a trade recently with a similar setup, signal "doji" immediately.
 
 You must respond ONLY with a valid JSON object in this exact format. Do not include any markdown formatting or extra text:
 {{"signal": "call" | "put" | "doji", "confidence": 0-100, "reason": "Brief explanation of the setup"}}
@@ -143,17 +145,29 @@ You must respond ONLY with a valid JSON object in this exact format. Do not incl
                                 result_text = result_text[:-3]
                             result_json = json.loads(result_text.strip())
                             
-                            # PROGRAMMATIC OVERRIDE FOR OTC MOMENTUM
-                            if current_rsi > 70 and result_json.get("signal") == "put":
-                                result_json["signal"] = "doji"
-                                result_json["reason"] = f"OVERRIDE: AI hallucinated a reversal put. RSI is {current_rsi:.2f} (Extreme Momentum UP). Forced skip."
-                            elif current_rsi < 30 and result_json.get("signal") == "call":
-                                result_json["signal"] = "doji"
-                                result_json["reason"] = f"OVERRIDE: AI hallucinated a reversal call. RSI is {current_rsi:.2f} (Extreme Momentum DOWN). Forced skip."
-                            elif 35 <= current_rsi <= 65 and result_json.get("signal") in ["call", "put"]:
-                                result_json["signal"] = "doji"
-                                result_json["confidence"] = 0
-                                result_json["reason"] = f"OVERRIDE: Market is chopping (RSI {current_rsi:.2f}). No clear direction. Forced skip."
+                            # PROGRAMMATIC OVERRIDE: BREAKOUT SWEET SPOT STRATEGY
+                            sig = result_json.get("signal")
+                            if sig in ["call", "put"]:
+                                if current_rsi > 70:
+                                    result_json["signal"] = "doji"
+                                    result_json["confidence"] = 0
+                                    result_json["reason"] = f"OVERRIDE: RSI {current_rsi:.2f} is in the OTC TRAP ZONE (>70). Broker baits traders here. Forced skip."
+                                elif current_rsi < 30:
+                                    result_json["signal"] = "doji"
+                                    result_json["confidence"] = 0
+                                    result_json["reason"] = f"OVERRIDE: RSI {current_rsi:.2f} is in the OTC TRAP ZONE (<30). Broker baits traders here. Forced skip."
+                                elif 35 <= current_rsi < 65:
+                                    result_json["signal"] = "doji"
+                                    result_json["confidence"] = 0
+                                    result_json["reason"] = f"OVERRIDE: RSI {current_rsi:.2f} is in CHOP ZONE. No direction. Forced skip."
+                                elif 65 <= current_rsi <= 70 and sig == "put":
+                                    result_json["signal"] = "doji"
+                                    result_json["confidence"] = 0
+                                    result_json["reason"] = f"OVERRIDE: RSI {current_rsi:.2f} is in BULLISH sweet spot. Put is wrong direction. Forced skip."
+                                elif 30 <= current_rsi <= 35 and sig == "call":
+                                    result_json["signal"] = "doji"
+                                    result_json["confidence"] = 0
+                                    result_json["reason"] = f"OVERRIDE: RSI {current_rsi:.2f} is in BEARISH sweet spot. Call is wrong direction. Forced skip."
                             
                             logger.info(f"[{asset_name}] AI Prediction: {result_json}")
                             return result_json
@@ -185,17 +199,29 @@ You must respond ONLY with a valid JSON object in this exact format. Do not incl
         result_text = response.choices[0].message.content
         result_json = json.loads(result_text)
         
-        # PROGRAMMATIC OVERRIDE FOR OTC MOMENTUM
-        if current_rsi > 70 and result_json.get("signal") == "put":
-            result_json["signal"] = "doji"
-            result_json["reason"] = f"OVERRIDE: AI hallucinated a reversal put. RSI is {current_rsi:.2f} (Extreme Momentum UP). Forced skip."
-        elif current_rsi < 30 and result_json.get("signal") == "call":
-            result_json["signal"] = "doji"
-            result_json["reason"] = f"OVERRIDE: AI hallucinated a reversal call. RSI is {current_rsi:.2f} (Extreme Momentum DOWN). Forced skip."
-        elif 35 <= current_rsi <= 65 and result_json.get("signal") in ["call", "put"]:
-            result_json["signal"] = "doji"
-            result_json["confidence"] = 0
-            result_json["reason"] = f"OVERRIDE: Market is chopping (RSI {current_rsi:.2f}). No clear direction. Forced skip."
+        # PROGRAMMATIC OVERRIDE: BREAKOUT SWEET SPOT STRATEGY
+        sig = result_json.get("signal")
+        if sig in ["call", "put"]:
+            if current_rsi > 70:
+                result_json["signal"] = "doji"
+                result_json["confidence"] = 0
+                result_json["reason"] = f"OVERRIDE: RSI {current_rsi:.2f} is in the OTC TRAP ZONE (>70). Broker baits traders here. Forced skip."
+            elif current_rsi < 30:
+                result_json["signal"] = "doji"
+                result_json["confidence"] = 0
+                result_json["reason"] = f"OVERRIDE: RSI {current_rsi:.2f} is in the OTC TRAP ZONE (<30). Broker baits traders here. Forced skip."
+            elif 35 <= current_rsi < 65:
+                result_json["signal"] = "doji"
+                result_json["confidence"] = 0
+                result_json["reason"] = f"OVERRIDE: RSI {current_rsi:.2f} is in CHOP ZONE. No direction. Forced skip."
+            elif 65 <= current_rsi <= 70 and sig == "put":
+                result_json["signal"] = "doji"
+                result_json["confidence"] = 0
+                result_json["reason"] = f"OVERRIDE: RSI {current_rsi:.2f} is in BULLISH sweet spot. Put is wrong direction. Forced skip."
+            elif 30 <= current_rsi <= 35 and sig == "call":
+                result_json["signal"] = "doji"
+                result_json["confidence"] = 0
+                result_json["reason"] = f"OVERRIDE: RSI {current_rsi:.2f} is in BEARISH sweet spot. Call is wrong direction. Forced skip."
         
         logger.info(f"[{asset_name}] Groq AI Prediction: {result_json}")
         return result_json
