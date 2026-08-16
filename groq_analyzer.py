@@ -95,9 +95,13 @@ YOUR TRADING RULES FOR OTC MARKETS (BREAKOUT SWEET SPOT STRATEGY):
    - BULLISH BREAKOUT (RSI 60-70): The trend is accelerating upward but has NOT reached the trap zone yet. This is the ONLY zone where you are allowed to signal "call".
    - BEARISH BREAKOUT (RSI 30-40): The trend is accelerating downward but has NOT reached the trap zone yet. This is the ONLY zone where you are allowed to signal "put".
 3. THE CHOP ZONE: If RSI_14 is between 40 and 60, the market has NO clear direction. You MUST signal "doji". There are ZERO exceptions.
-4. CONFIDENCE RULES: You must ONLY set confidence above 80 when ALL of the following are true: (a) RSI is in a sweet spot zone (60-70 for call, 30-40 for put), (b) Price is above EMA_50 for calls or below EMA_50 for puts, (c) The setup does not match any recent losing trade. If even ONE condition is missing, your confidence MUST be below 80.
-5. PATIENCE OVER PROFIT: It is better to skip 100 trades than to take 1 bad trade. When in doubt, ALWAYS signal "doji".
-6. If your Recent Trades Memory shows you lost a trade recently with a similar setup, signal "doji" immediately.
+4. BOLLINGER BAND CONFIRMATION (MANDATORY): Even if RSI is in the sweet spot, you must also check Bollinger Bands:
+   - For CALL: Price must NOT be touching or above the upper Bollinger Band (BBU_20_2.0). If price is near BBU, the move is already exhausted. Signal "doji".
+   - For PUT: Price must NOT be touching or below the lower Bollinger Band (BBL_20_2.0). If price is near BBL, the move is already exhausted. Signal "doji".
+   - The ideal trade is when RSI is in the sweet spot AND price is between the middle band (SMA_20) and the outer band, with room to move.
+5. CONFIDENCE RULES: You must ONLY set confidence above 80 when ALL of the following are true: (a) RSI is in a sweet spot zone (60-70 for call, 30-40 for put), (b) Price is above EMA_50 for calls or below EMA_50 for puts, (c) Price is NOT touching the outer Bollinger Band, (d) The setup does not match any recent losing trade. If even ONE condition is missing, your confidence MUST be below 80.
+6. PATIENCE OVER PROFIT: It is better to skip 100 trades than to take 1 bad trade. When in doubt, ALWAYS signal "doji".
+7. If your Recent Trades Memory shows you lost a trade recently with a similar setup, signal "doji" immediately.
 
 You must respond ONLY with a valid JSON object in this exact format. Do not include any markdown formatting or extra text:
 {{"signal": "call" | "put" | "doji", "confidence": 0-100, "reason": "Brief explanation of the setup"}}
