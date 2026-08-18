@@ -1858,11 +1858,18 @@ async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size:
                 
                 recent_trades = asset_trades + global_losses
                 
-                # LOSS COOLDOWN: If this asset lost in the last 2 trades, skip it entirely
-                recent_asset_results = [t.get("result") for t in asset_trades[:2]]
-                if recent_asset_results.count("LOSS") >= 2:
-                    logger.warning(f"[{asset_name}] LOSS COOLDOWN: This asset lost 2+ times recently. Skipping to avoid repeat losses.")
-                    return 'doji', f"LOSS COOLDOWN: {asset_name} has lost 2+ times recently. Blacklisted temporarily."
+                # LOSS COOLDOWN: Only pause for 3 minutes (180 seconds) after 2 consecutive losses
+                now_ts = time.time()
+                recent_losses_in_window = 0
+                for t in asset_trades[:2]:
+                    if t.get("result") == "LOSS":
+                        t_time = t.get("timestamp")
+                        if isinstance(t_time, (int, float)) and (now_ts - t_time < 180):
+                            recent_losses_in_window += 1
+                            
+                if recent_losses_in_window >= 2:
+                    logger.warning(f"[{asset_name}] LOSS COOLDOWN: Asset lost 2+ times in last 3m. Pausing temporarily.")
+                    return 'doji', f"LOSS COOLDOWN: {asset_name} lost 2+ times in last 3m."
 
             # Send to Groq for analysis
             logger.info(f"[{asset_name}] Sending {len(candles)} candles to Groq AI (with {len(recent_trades)} memory slots)...")
