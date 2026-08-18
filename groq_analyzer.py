@@ -50,12 +50,15 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
         df = pd.DataFrame(candles)
         
         # =========================================================================
-        # 5-SECOND OTC SURESHOT GAP & HEAVY REJECTION BUG STRATEGY (DX-BINOMO / QUOTEX BUG)
+        # 5-SECOND OTC SURESHOT PRO COMBO (GAP, REJECTION, ENGULFING & TREND)
         # =========================================================================
         if candle_size <= 5:
-            if len(df) < 2:
-                return {"signal": "doji", "confidence": 0, "reason": "Not enough 5s candles"}
+            if len(df) < 20:
+                return {"signal": "doji", "confidence": 0, "reason": "Not enough 5s candles for trend & pattern analysis"}
                 
+            # Calculate 20-period EMA for 5s trend detection
+            df['EMA_20'] = df['close'].ewm(span=20, adjust=False).mean()
+            
             last_candle = df.iloc[-1]
             prev_candle = df.iloc[-2]
             
@@ -63,35 +66,80 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
             c_close = float(last_candle.get('close', 0))
             c_high = float(last_candle.get('high', 0))
             c_low = float(last_candle.get('low', 0))
+            
+            p_open = float(prev_candle.get('open', 0))
             p_close = float(prev_candle.get('close', 0))
             
             total_range = max(0.000001, c_high - c_low)
+            body_size = abs(c_close - c_open)
             upper_wick = c_high - max(c_open, c_close)
             lower_wick = min(c_open, c_close) - c_low
             
-            upper_rejection_ratio = upper_wick / total_range
-            lower_rejection_ratio = lower_wick / total_range
+            upper_wick_ratio = upper_wick / total_range
+            lower_wick_ratio = lower_wick / total_range
+            body_ratio = body_size / total_range
             
+            # Trend Check (EMA 20)
+            ema_20 = float(last_candle['EMA_20'])
+            is_uptrend = c_close > ema_20
+            is_downtrend = c_close < ema_20
+            
+            # Gap detection
             gap = c_open - p_close
-            gap_threshold = total_range * 0.15 # 15% threshold for price gap
-            
+            gap_threshold = total_range * 0.15
             is_gap_up = gap > gap_threshold
             is_gap_down = gap < -gap_threshold
-            is_heavy_upper_rejection = upper_rejection_ratio >= 0.35
-            is_heavy_lower_rejection = lower_rejection_ratio >= 0.35
             
-            # Check 5s Gap & Rejection Reversal Signals (Opposite Direction Trade)
-            if is_gap_up or is_heavy_upper_rejection:
-                reason = f"5S SURESHOT: {'Gap Up' if is_gap_up else 'Heavy Upper Rejection'} ({upper_rejection_ratio*100:.1f}% wick). Taking PUT trade."
-                logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "put", "confidence": 90, "reason": reason}
-            elif is_gap_down or is_heavy_lower_rejection:
-                reason = f"5S SURESHOT: {'Gap Down' if is_gap_down else 'Heavy Lower Rejection'} ({lower_rejection_ratio*100:.1f}% wick). Taking CALL trade."
+            # Pattern Recognition:
+            # 1. Doji Avoidance (Market confusion)
+            is_doji = body_ratio < 0.15 and upper_wick_ratio < 0.35 and lower_wick_ratio < 0.35
+            if is_doji:
+                return {"signal": "doji", "confidence": 0, "reason": "5S PRO COMBO: Doji candle detected (Market confusion). Avoid trade."}
+                
+            # 2. Rejection / Shooting Star / Hammer Patterns
+            is_shooting_star = upper_wick_ratio >= 0.35 # Upar lambi wick -> SELL (PUT)
+            is_hammer = lower_wick_ratio >= 0.35        # Neeche lambi wick -> BUY (CALL)
+            
+            # 3. Engulfing Patterns
+            is_bullish_engulfing = (p_close < p_open) and (c_close > c_open) and (c_close >= p_open) and (c_open <= p_close)
+            is_bearish_engulfing = (p_close > p_open) and (c_close < c_open) and (c_close <= p_open) and (c_open >= p_close)
+            
+            # 4. Strong Momentum Candle (Marubozu)
+            is_strong_green = (c_close > c_open) and (body_ratio >= 0.70)
+            is_strong_red = (c_close < c_open) and (body_ratio >= 0.70)
+            
+            # --- EVALUATE PRO COMBO SIGNALS ---
+            # BUY (CALL) SIGNALS:
+            if is_hammer or is_gap_down:
+                reason = f"5S PRO COMBO: {'Hammer (Lower Wick)' if is_hammer else 'Gap Down'} detected. Signal = BUY (CALL)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "call", "confidence": 90, "reason": reason}
+            elif is_bullish_engulfing and is_uptrend:
+                reason = "5S PRO COMBO: Bullish Engulfing in Uptrend. Signal = BUY (CALL)."
+                logger.info(f"[{asset_name}] {reason}")
+                return {"signal": "call", "confidence": 88, "reason": reason}
+            elif is_strong_green and is_uptrend:
+                reason = "5S PRO COMBO: Strong Green Candle in Uptrend. Signal = BUY (CALL)."
+                logger.info(f"[{asset_name}] {reason}")
+                return {"signal": "call", "confidence": 85, "reason": reason}
+
+            # SELL (PUT) SIGNALS:
+            elif is_shooting_star or is_gap_up:
+                reason = f"5S PRO COMBO: {'Shooting Star (Upper Wick)' if is_shooting_star else 'Gap Up'} detected. Signal = SELL (PUT)."
+                logger.info(f"[{asset_name}] {reason}")
+                return {"signal": "put", "confidence": 90, "reason": reason}
+            elif is_bearish_engulfing and is_downtrend:
+                reason = "5S PRO COMBO: Bearish Engulfing in Downtrend. Signal = SELL (PUT)."
+                logger.info(f"[{asset_name}] {reason}")
+                return {"signal": "put", "confidence": 88, "reason": reason}
+            elif is_strong_red and is_downtrend:
+                reason = "5S PRO COMBO: Strong Red Candle in Downtrend. Signal = SELL (PUT)."
+                logger.info(f"[{asset_name}] {reason}")
+                return {"signal": "put", "confidence": 85, "reason": reason}
+                
             else:
-                logger.info(f"[{asset_name}] 5S SURESHOT: No gap or heavy rejection on latest 5s candle. Skipping.")
-                return {"signal": "doji", "confidence": 0, "reason": "5S SURESHOT: No gap or heavy rejection detected on current 5s candle."}
+                logger.info(f"[{asset_name}] 5S PRO COMBO: No clean pattern match. Skipping.")
+                return {"signal": "doji", "confidence": 0, "reason": "5S PRO COMBO: No clean pattern match on 5s candle. Skipping."}
 
         # Calculate EMA 50
         df['EMA_50'] = df['close'].ewm(span=50, adjust=False).mean()
