@@ -41,19 +41,35 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
     """
     global CURRENT_KEY_INDEX
     
-    if not candles or len(candles) < 50:
-        logger.warning(f"[{asset_name}] Not enough candles for AI analysis (need at least 50).")
+    min_required_candles = 20 if candle_size <= 5 else 50
+    if not candles or len(candles) < min_required_candles:
+        logger.warning(f"[{asset_name}] Not enough candles for analysis (need at least {min_required_candles}, got {len(candles) if candles else 0}).")
         return {"signal": "doji", "confidence": 0, "reason": "Not enough data"}
 
     try:
+        # Normalize candle dictionary keys to standard 'open', 'high', 'low', 'close'
+        normalized_candles = []
+        for c in candles:
+            if isinstance(c, dict):
+                o = c.get('open') if c.get('open') is not None else (c.get('o') if c.get('o') is not None else c.get('Open', 0))
+                h = c.get('high') if c.get('high') is not None else (c.get('h') if c.get('h') is not None else c.get('High', 0))
+                l = c.get('low') if c.get('low') is not None else (c.get('l') if c.get('l') is not None else c.get('Low', 0))
+                close_val = c.get('close') if c.get('close') is not None else (c.get('c') if c.get('c') is not None else c.get('Close', 0))
+                normalized_candles.append({
+                    'open': float(o or 0),
+                    'high': float(h or 0),
+                    'low': float(l or 0),
+                    'close': float(close_val or 0)
+                })
+
         # Convert candles to DataFrame
-        df = pd.DataFrame(candles)
+        df = pd.DataFrame(normalized_candles)
         
         # =========================================================================
         # 5-SECOND OTC SURESHOT PRO COMBO (GAP, REJECTION, ENGULFING & TREND)
         # =========================================================================
         if candle_size <= 5:
-            if len(df) < 20:
+            if len(df) < 10:
                 return {"signal": "doji", "confidence": 0, "reason": "Not enough 5s candles for trend & pattern analysis"}
                 
             # Calculate 20-period EMA for 5s trend detection
