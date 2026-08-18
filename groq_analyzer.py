@@ -115,30 +115,53 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
             is_bullish_engulfing = (p_close < p_open) and (c_close > c_open)
             is_bearish_engulfing = (p_close > p_open) and (c_close < c_open)
             
-            # --- EVALUATE PRO COMBO SIGNALS ---
-            # BUY (CALL) SIGNALS (Pattern or Uptrend):
-            if is_hammer or is_gap_down:
+            # Calculate Donchian Channel (Period 24)
+            df['DC_Upper'] = df['high'].rolling(window=min(24, len(df))).max()
+            df['DC_Lower'] = df['low'].rolling(window=min(24, len(df))).min()
+            
+            dc_upper = float(last_candle['DC_Upper']) if not pd.isna(last_candle.get('DC_Upper')) else c_high
+            dc_lower = float(last_candle['DC_Lower']) if not pd.isna(last_candle.get('DC_Lower')) else c_low
+            
+            is_touching_dc_lower = (c_low <= dc_lower) or (abs(c_close - dc_lower) <= total_range * 0.05)
+            is_touching_dc_upper = (c_high >= dc_upper) or (abs(c_close - dc_upper) <= total_range * 0.05)
+            
+            # --- EVALUATE PRO COMBO & DONCHIAN SIGNALS ---
+            # 1. DONCHIAN OUTER BAND REVERSALS (95% Top Priority)
+            if is_touching_dc_lower and (lower_wick_ratio >= 0.15 or c_close > c_open or is_gap_down):
+                reason = f"5S DONCHIAN 24: Price touched Lower Band ({dc_lower:.5f}) with Reversal/Wick. Signal = BUY (CALL)."
+                logger.info(f"[{asset_name}] {reason}")
+                return {"signal": "call", "confidence": 95, "reason": reason}
+
+            elif is_touching_dc_upper and (upper_wick_ratio >= 0.15 or c_close < c_open or is_gap_up):
+                reason = f"5S DONCHIAN 24: Price touched Upper Band ({dc_upper:.5f}) with Reversal/Wick. Signal = SELL (PUT)."
+                logger.info(f"[{asset_name}] {reason}")
+                return {"signal": "put", "confidence": 95, "reason": reason}
+
+            # 2. PATTERN REVERSALS & GAPS (90% Priority)
+            elif is_hammer or is_gap_down:
                 reason = f"5S PRO COMBO: {'Hammer (Lower Wick)' if is_hammer else 'Gap Down'} detected. Signal = BUY (CALL)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "call", "confidence": 90, "reason": reason}
-            elif is_bullish_engulfing and is_uptrend:
-                reason = "5S PRO COMBO: Bullish Engulfing in Uptrend. Signal = BUY (CALL)."
-                logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "call", "confidence": 88, "reason": reason}
-            elif is_uptrend and (c_close > c_open or body_ratio >= 0.05):
-                reason = "5S PRO COMBO: Uptrend Momentum (Price > EMA_20). Signal = BUY (CALL)."
-                logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "call", "confidence": 85, "reason": reason}
-
-            # SELL (PUT) SIGNALS (Pattern or Downtrend):
             elif is_shooting_star or is_gap_up:
                 reason = f"5S PRO COMBO: {'Shooting Star (Upper Wick)' if is_shooting_star else 'Gap Up'} detected. Signal = SELL (PUT)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "put", "confidence": 90, "reason": reason}
+
+            # 3. ENGULFING PATTERNS (88% Priority)
+            elif is_bullish_engulfing and is_uptrend:
+                reason = "5S PRO COMBO: Bullish Engulfing in Uptrend. Signal = BUY (CALL)."
+                logger.info(f"[{asset_name}] {reason}")
+                return {"signal": "call", "confidence": 88, "reason": reason}
             elif is_bearish_engulfing and is_downtrend:
                 reason = "5S PRO COMBO: Bearish Engulfing in Downtrend. Signal = SELL (PUT)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "put", "confidence": 88, "reason": reason}
+
+            # 4. TREND MOMENTUM (85% Priority)
+            elif is_uptrend and (c_close > c_open or body_ratio >= 0.05):
+                reason = "5S PRO COMBO: Uptrend Momentum (Price > EMA_20). Signal = BUY (CALL)."
+                logger.info(f"[{asset_name}] {reason}")
+                return {"signal": "call", "confidence": 85, "reason": reason}
             elif is_downtrend and (c_close < c_open or body_ratio >= 0.05):
                 reason = "5S PRO COMBO: Downtrend Momentum (Price < EMA_20). Signal = SELL (PUT)."
                 logger.info(f"[{asset_name}] {reason}")
