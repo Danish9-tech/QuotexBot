@@ -92,9 +92,9 @@ YOUR TRADING RULES FOR OTC MARKETS (BREAKOUT SWEET SPOT STRATEGY):
    - If RSI_14 is > 70: the broker is BAITING momentum traders. You MUST signal "doji". Do NOT place any trade.
    - If RSI_14 is < 30: the broker is BAITING momentum traders. You MUST signal "doji". Do NOT place any trade.
 2. THE BREAKOUT SWEET SPOT: The ONLY zones where trading is profitable are:
-   - BULLISH BREAKOUT (RSI 60-70): The trend is accelerating upward but has NOT reached the trap zone yet. This is the ONLY zone where you are allowed to signal "call".
-   - BEARISH BREAKOUT (RSI 30-40): The trend is accelerating downward but has NOT reached the trap zone yet. This is the ONLY zone where you are allowed to signal "put".
-3. THE CHOP ZONE: If RSI_14 is between 40 and 60, the market has NO clear direction. You MUST signal "doji". There are ZERO exceptions.
+   - BULLISH BREAKOUT (RSI 55-70): The trend is accelerating upward but has NOT reached the trap zone yet. This is the ONLY zone where you are allowed to signal "call".
+   - BEARISH BREAKOUT (RSI 30-45): The trend is accelerating downward but has NOT reached the trap zone yet. This is the ONLY zone where you are allowed to signal "put".
+3. THE CHOP ZONE: If RSI_14 is between 45 and 55, the market has NO clear direction. You MUST signal "doji".
 4. BOLLINGER BAND BONUS: If price is near the outer Bollinger Band, be cautious. Prefer trades where price has room to move between the middle band and the outer band.
 5. CONFIDENCE RULES: Set confidence 65-100 when RSI is in a sweet spot zone AND price confirms with EMA_50. Set confidence below 65 when conditions are unclear.
 6. If your Recent Trades Memory shows you lost a trade recently with a similar setup, signal "doji" immediately.
@@ -156,15 +156,15 @@ You must respond ONLY with a valid JSON object in this exact format. Do not incl
                                     result_json["signal"] = "doji"
                                     result_json["confidence"] = 0
                                     result_json["reason"] = f"OVERRIDE: RSI {current_rsi:.2f} is in the OTC TRAP ZONE (<30). Broker baits traders here. Forced skip."
-                                elif 40 <= current_rsi < 60:
+                                elif 45 <= current_rsi < 55:
                                     result_json["signal"] = "doji"
                                     result_json["confidence"] = 0
                                     result_json["reason"] = f"OVERRIDE: RSI {current_rsi:.2f} is in CHOP ZONE. No direction. Forced skip."
-                                elif 60 <= current_rsi <= 70 and sig == "put":
+                                elif 55 <= current_rsi <= 70 and sig == "put":
                                     result_json["signal"] = "doji"
                                     result_json["confidence"] = 0
                                     result_json["reason"] = f"OVERRIDE: RSI {current_rsi:.2f} is in BULLISH sweet spot. Put is wrong direction. Forced skip."
-                                elif 30 <= current_rsi <= 40 and sig == "call":
+                                elif 30 <= current_rsi <= 45 and sig == "call":
                                     result_json["signal"] = "doji"
                                     result_json["confidence"] = 0
                                     result_json["reason"] = f"OVERRIDE: RSI {current_rsi:.2f} is in BEARISH sweet spot. Call is wrong direction. Forced skip."
@@ -210,15 +210,15 @@ You must respond ONLY with a valid JSON object in this exact format. Do not incl
                 result_json["signal"] = "doji"
                 result_json["confidence"] = 0
                 result_json["reason"] = f"OVERRIDE: RSI {current_rsi:.2f} is in the OTC TRAP ZONE (<30). Broker baits traders here. Forced skip."
-            elif 40 <= current_rsi < 60:
+            elif 45 <= current_rsi < 55:
                 result_json["signal"] = "doji"
                 result_json["confidence"] = 0
                 result_json["reason"] = f"OVERRIDE: RSI {current_rsi:.2f} is in CHOP ZONE. No direction. Forced skip."
-            elif 60 <= current_rsi <= 70 and sig == "put":
+            elif 55 <= current_rsi <= 70 and sig == "put":
                 result_json["signal"] = "doji"
                 result_json["confidence"] = 0
                 result_json["reason"] = f"OVERRIDE: RSI {current_rsi:.2f} is in BULLISH sweet spot. Put is wrong direction. Forced skip."
-            elif 30 <= current_rsi <= 40 and sig == "call":
+            elif 30 <= current_rsi <= 45 and sig == "call":
                 result_json["signal"] = "doji"
                 result_json["confidence"] = 0
                 result_json["reason"] = f"OVERRIDE: RSI {current_rsi:.2f} is in BEARISH sweet spot. Call is wrong direction. Forced skip."
