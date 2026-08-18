@@ -49,6 +49,50 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
         # Convert candles to DataFrame
         df = pd.DataFrame(candles)
         
+        # =========================================================================
+        # 5-SECOND OTC SURESHOT GAP & HEAVY REJECTION BUG STRATEGY (DX-BINOMO / QUOTEX BUG)
+        # =========================================================================
+        if candle_size <= 5:
+            if len(df) < 2:
+                return {"signal": "doji", "confidence": 0, "reason": "Not enough 5s candles"}
+                
+            last_candle = df.iloc[-1]
+            prev_candle = df.iloc[-2]
+            
+            c_open = float(last_candle.get('open', 0))
+            c_close = float(last_candle.get('close', 0))
+            c_high = float(last_candle.get('high', 0))
+            c_low = float(last_candle.get('low', 0))
+            p_close = float(prev_candle.get('close', 0))
+            
+            total_range = max(0.000001, c_high - c_low)
+            upper_wick = c_high - max(c_open, c_close)
+            lower_wick = min(c_open, c_close) - c_low
+            
+            upper_rejection_ratio = upper_wick / total_range
+            lower_rejection_ratio = lower_wick / total_range
+            
+            gap = c_open - p_close
+            gap_threshold = total_range * 0.15 # 15% threshold for price gap
+            
+            is_gap_up = gap > gap_threshold
+            is_gap_down = gap < -gap_threshold
+            is_heavy_upper_rejection = upper_rejection_ratio >= 0.35
+            is_heavy_lower_rejection = lower_rejection_ratio >= 0.35
+            
+            # Check 5s Gap & Rejection Reversal Signals (Opposite Direction Trade)
+            if is_gap_up or is_heavy_upper_rejection:
+                reason = f"5S SURESHOT: {'Gap Up' if is_gap_up else 'Heavy Upper Rejection'} ({upper_rejection_ratio*100:.1f}% wick). Taking PUT trade."
+                logger.info(f"[{asset_name}] {reason}")
+                return {"signal": "put", "confidence": 90, "reason": reason}
+            elif is_gap_down or is_heavy_lower_rejection:
+                reason = f"5S SURESHOT: {'Gap Down' if is_gap_down else 'Heavy Lower Rejection'} ({lower_rejection_ratio*100:.1f}% wick). Taking CALL trade."
+                logger.info(f"[{asset_name}] {reason}")
+                return {"signal": "call", "confidence": 90, "reason": reason}
+            else:
+                logger.info(f"[{asset_name}] 5S SURESHOT: No gap or heavy rejection on latest 5s candle. Skipping.")
+                return {"signal": "doji", "confidence": 0, "reason": "5S SURESHOT: No gap or heavy rejection detected on current 5s candle."}
+
         # Calculate EMA 50
         df['EMA_50'] = df['close'].ewm(span=50, adjust=False).mean()
         

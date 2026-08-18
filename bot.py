@@ -114,7 +114,7 @@ user_states: Dict[int, str] = {} # e.g., {user_id: "waiting_broadcast_message"}
 DEFAULT_TRADE_AMOUNT = 5
 DEFAULT_TRADE_DURATION = 5 # 5-second turbo trades by default (can be set per asset)
 DEFAULT_TRADE_MODE = "TIMER" # 'TIMER' or 'TIME'
-DEFAULT_CANDLE_SIZE = 60
+DEFAULT_CANDLE_SIZE = 5 # 5-second candles for 5S Sureshot strategy
 DEFAULT_SERVICE_STATUS = False # Trading Off by default
 
 MARTINGALE_MULTIPLIER = 2.0
@@ -1974,7 +1974,7 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
             # Extract settings needed
             assets_to_trade = settings.get("assets", [])
             trade_mode = settings.get("trade_mode", DEFAULT_TRADE_MODE) # 'TIME' or 'TIMER'
-            candle_size = settings.get("candle_size", DEFAULT_CANDLE_SIZE)
+            candle_size = 5 # Force 5-second candle timeframe for 5S Sureshot strategy
             martingale_state_db = settings.get("martingale_state", {})
             cooldown_until_db = settings.get("cooldown_until", 0.0)
 
