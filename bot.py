@@ -2030,8 +2030,8 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
 
                  asset_name_original = asset_info.get('name')
                  base_amount = asset_info.get('amount', DEFAULT_TRADE_AMOUNT)
-                 # 'duration' field stores the value used for BOTH timer/time expiry setting
-                 duration_or_timeframe_value = asset_info.get('duration', DEFAULT_TRADE_DURATION)
+                 # Enforce strict 5-second trade duration globally as requested
+                 duration_or_timeframe_value = 5
 
                  if not asset_name_original: continue # Skip if asset structure is invalid
 
