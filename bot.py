@@ -1846,11 +1846,24 @@ async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size:
         candles = await qx_client.get_historical_candles(asset_name, amount_of_seconds, candle_size) 
 
         if candles and isinstance(candles, list) and len(candles) > 0:
-            # Fetch recent trade history for AI Memory
+            # Fetch recent trade history for AI Memory (EXPANDED LEARNING)
             recent_trades = []
             if 'trade_history_db' in globals() and trade_history_db is not None:
-                cursor = trade_history_db.find({"account_doc_id": str(account_doc_id), "asset": asset_name}).sort("timestamp", -1).limit(3)
-                recent_trades = await cursor.to_list(length=3)
+                # Memory 1: Last 5 trades on THIS specific asset
+                cursor = trade_history_db.find({"account_doc_id": str(account_doc_id), "asset": asset_name}).sort("timestamp", -1).limit(5)
+                asset_trades = await cursor.to_list(length=5)
+                
+                # Memory 2: Last 5 LOSS trades across ALL assets (cross-asset learning)
+                cursor2 = trade_history_db.find({"account_doc_id": str(account_doc_id), "result": "LOSS"}).sort("timestamp", -1).limit(5)
+                global_losses = await cursor2.to_list(length=5)
+                
+                recent_trades = asset_trades + global_losses
+                
+                # LOSS COOLDOWN: If this asset lost in the last 2 trades, skip it entirely
+                recent_asset_results = [t.get("result") for t in asset_trades[:2]]
+                if recent_asset_results.count("LOSS") >= 2:
+                    logger.warning(f"[{asset_name}] LOSS COOLDOWN: This asset lost 2+ times recently. Skipping to avoid repeat losses.")
+                    return 'doji', f"LOSS COOLDOWN: {asset_name} has lost 2+ times recently. Blacklisted temporarily."
 
             # Send to Groq for analysis
             logger.info(f"[{asset_name}] Sending {len(candles)} candles to Groq AI (with {len(recent_trades)} memory slots)...")
