@@ -111,9 +111,8 @@ active_otp_requests: Dict[int, Dict[str, Any]] = {}
 # Temporary storage for ongoing user actions (e.g., waiting for broadcast message)
 user_states: Dict[int, str] = {} # e.g., {user_id: "waiting_broadcast_message"}
 
-# Default Quotex Settings (can be overridden from DB)
 DEFAULT_TRADE_AMOUNT = 5
-DEFAULT_TRADE_DURATION = 60 # For Timer/Time mode number
+DEFAULT_TRADE_DURATION = 5 # 5-second turbo trades by default (can be set per asset)
 DEFAULT_TRADE_MODE = "TIMER" # 'TIMER' or 'TIME'
 DEFAULT_CANDLE_SIZE = 60
 DEFAULT_SERVICE_STATUS = False # Trading Off by default
@@ -2094,19 +2093,26 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
 
 
                  # 4c. Place the Trade
-                 logger.info(f"[{asset_name_open}] Placing {direction.upper()} trade. Amount: {current_trade_amount}, Exp: {duration_or_timeframe_value}s, Mode: {trade_mode}")
+                 actual_duration = duration_or_timeframe_value
+                 if trade_mode == "TIMER" and duration_or_timeframe_value >= 30:
+                     elapsed_in_candle = int(time.time()) % candle_size
+                     if elapsed_in_candle > 0:
+                         actual_duration = max(5, duration_or_timeframe_value - elapsed_in_candle)
+                         logger.info(f"[{asset_name_open}] Adjusted trade duration from {duration_or_timeframe_value}s to {actual_duration}s to align with candle close (elapsed: {elapsed_in_candle}s).")
+
+                 logger.info(f"[{asset_name_open}] Placing {direction.upper()} trade. Amount: {current_trade_amount}, Exp: {actual_duration}s, Mode: {trade_mode}")
                  trade_placed_success = False
                  profit_or_loss_amount = 0
                  buy_error_reason = ""
                  try:
-                      status, buy_info = await qx_client.buy(current_trade_amount, asset_name_open, direction, duration_or_timeframe_value, trade_mode) # Pass 'TIMER' or 'TIME'
+                      status, buy_info = await qx_client.buy(current_trade_amount, asset_name_open, direction, actual_duration, trade_mode) # Pass 'TIMER' or 'TIME'
 
                       if status:
                            trade_id = buy_info.get('id', 'N/A')
                            logger.info(f"[{asset_name_open}] Trade placed successfully! ID: {trade_id}. Waiting for result...")
 
                            # Wait for duration + buffer
-                           await asyncio.sleep(duration_or_timeframe_value + 2) # Increased buffer slightly
+                           await asyncio.sleep(actual_duration + 2)
 
                            logger.info(f"[{asset_name_open}] Checking result for Trade ID: {trade_id}...")
                            # Wrap in timeout to prevent infinite hangs
