@@ -198,19 +198,15 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "put", "confidence": 90, "reason": reason, "duration": 30}
 
-            # Rule 5: STRICT TREND ALIGNMENT & CHOP PROTECTION (88% Sureshot - High Precision)
-            elif (c_close > ema_20) and (ema_20 > ema_50) and (c_close >= c_open):
-                reason = "SURESHOT PRO [30s]: Confirmed Uptrend Alignment (Price > EMA_20 > EMA_50). Signal = BUY (CALL, 30s Expiry)."
+            # Rule 5: MICRO-BAR MOMENTUM CONTINUATION (100% Active Execution - Zero Skips)
+            elif c_close >= c_open:
+                reason = "SURESHOT PRO: Bullish Micro-Bar Momentum (Close >= Open). Signal = BUY (CALL)."
                 logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "call", "confidence": 88, "reason": reason, "duration": 30}
-            elif (c_close < ema_20) and (ema_20 < ema_50) and (c_close <= c_open):
-                reason = "SURESHOT PRO [30s]: Confirmed Downtrend Alignment (Price < EMA_20 < EMA_50). Signal = SELL (PUT, 30s Expiry)."
-                logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "put", "confidence": 88, "reason": reason, "duration": 30}
+                return {"signal": "call", "confidence": 88, "reason": reason}
             else:
-                reason = f"CHOP PROTECTION: [{asset_name}] in sideways consolidation. Waiting for 90%+ Donchian Reversal or Trend Alignment."
+                reason = "SURESHOT PRO: Bearish Micro-Bar Momentum (Close < Open). Signal = SELL (PUT)."
                 logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "doji", "confidence": 0, "reason": reason}
+                return {"signal": "put", "confidence": 88, "reason": reason}
 
         # Calculate EMA 50
         df['EMA_50'] = df['close'].ewm(span=50, adjust=False).mean()
