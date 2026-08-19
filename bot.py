@@ -1845,6 +1845,9 @@ async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size:
         candles = await qx_client.get_historical_candles(asset_name, amount_of_seconds, candle_size) 
 
         if candles and isinstance(candles, list) and len(candles) > 0:
+            # Cap candle list to latest 100 to prevent Linux Kernel Out-Of-Memory (OOM) RAM crashes
+            candles = candles[-100:]
+            
             # Fetch recent trade history for AI Memory (EXPANDED LEARNING)
             recent_trades = []
             if 'trade_history_db' in globals() and trade_history_db is not None:
