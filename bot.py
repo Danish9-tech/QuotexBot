@@ -2118,16 +2118,20 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                            trade_id = buy_info.get('id', 'N/A')
                            logger.info(f"[{asset_name_open}] Trade placed successfully! ID: {trade_id}. Waiting for result...")
 
-                           # Wait for duration + buffer (5.5s for 5s trades to allow fast MTG entry)
-                           wait_delay = actual_duration + 0.5 if candle_size <= 5 else actual_duration + 2
+                           # Wait for full trade expiry + broker settlement delay (minimum 7 seconds)
+                           wait_delay = max(7, actual_duration + 2)
                            await asyncio.sleep(wait_delay)
 
                            logger.info(f"[{asset_name_open}] Checking result for Trade ID: {trade_id}...")
-                           # Wrap in timeout to prevent infinite hangs
+                           # Wrap in timeout to prevent infinite hangs & include retry verification
                            try:
                                check_status, check_profit = await asyncio.wait_for(qx_client.check_win(buy_info["id"]), timeout=15.0)
-                               win_result = (check_status == "win")
-                               profit_or_loss_amount = check_profit
+                               if not check_status or (isinstance(check_profit, (int, float)) and check_profit == 0):
+                                   await asyncio.sleep(2.0)
+                                   check_status, check_profit = await asyncio.wait_for(qx_client.check_win(buy_info["id"]), timeout=10.0)
+                               
+                               win_result = (check_status == "win") or (isinstance(check_profit, (int, float)) and check_profit > 0)
+                               profit_or_loss_amount = check_profit if isinstance(check_profit, (int, float)) else 0.0
                            except asyncio.TimeoutError:
                                logger.warning(f"[{asset_name_open}] check_win timed out for Trade ID: {trade_id}")
                                win_result = False # Default to False if we can't confirm
