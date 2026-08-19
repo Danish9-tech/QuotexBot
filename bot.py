@@ -2118,8 +2118,9 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                            trade_id = buy_info.get('id', 'N/A')
                            logger.info(f"[{asset_name_open}] Trade placed successfully! ID: {trade_id}. Waiting for result...")
 
-                           # Wait for duration + buffer
-                           await asyncio.sleep(actual_duration + 2)
+                           # Wait for duration + buffer (5.5s for 5s trades to allow fast MTG entry)
+                           wait_delay = actual_duration + 0.5 if candle_size <= 5 else actual_duration + 2
+                           await asyncio.sleep(wait_delay)
 
                            logger.info(f"[{asset_name_open}] Checking result for Trade ID: {trade_id}...")
                            # Wrap in timeout to prevent infinite hangs
@@ -2170,14 +2171,9 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                                     logger.warning(f"[{asset_name_open}] Trade Result: LOSS! Lost: {abs(profit_or_loss_amount):.2f}")
                                     await bot_instance.send_message(user_id, f"❌ Trade Result: LOSS! Lost: {abs(profit_or_loss_amount):.2f}")
                                     asset_mtg['consecutive_losses'] += 1
-                                    # Update consecutive losses in the database for the asset
                                     await update_trade_setting(account_doc_id, {
+                                        f"martingale_state.{asset_name_open}.current_amount": asset_mtg['current_amount'],
                                         f"martingale_state.{asset_name_open}.consecutive_losses": asset_mtg['consecutive_losses']
-                                    })
-                                    # Disabled Martingale - Always stick to the base amount
-                                    asset_mtg['current_amount'] = base_amount
-                                    await update_trade_setting(account_doc_id, {
-                                        f"martingale_state.{asset_name_open}.current_amount": asset_mtg['current_amount']
                                     })
 
                                     if asset_mtg['consecutive_losses'] >= MAX_CONSECUTIVE_LOSSES:
