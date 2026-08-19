@@ -125,64 +125,59 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
             is_touching_dc_lower = (c_low <= dc_lower) or (abs(c_close - dc_lower) <= total_range * 0.05)
             is_touching_dc_upper = (c_high >= dc_upper) or (abs(c_close - dc_upper) <= total_range * 0.05)
             
-            # --- PROFESSIONSAL 5-SECOND SURESHOT TRADER ENGINE ---
+            # --- STRICT PROFESSIONAL 5-SECOND SURESHOT TRADER ENGINE ---
             # Rule 0: Filter out completely flat / zero-volatility Doji noise
             if body_ratio < 0.05 and total_range <= 0.000005 and not is_touching_dc_lower and not is_touching_dc_upper:
                 logger.info(f"[{asset_name}] 5S SURESHOT: Flat zero-volatility candle. Skipping to prevent flat-market losses.")
                 return {"signal": "doji", "confidence": 0, "reason": "5S SURESHOT: Zero-volatility flat candle skipped."}
 
-            # Rule 1: DONCHIAN 24 OUTER BAND REVERSAL (95% Top Sureshot)
-            if is_touching_dc_lower and (lower_wick_ratio >= 0.12 or c_close > c_open or is_gap_down):
+            # Setup 1: DONCHIAN 24 OUTER BAND REVERSAL (95% Top Sureshot)
+            if is_touching_dc_lower and (lower_wick_ratio >= 0.15 or c_close > c_open or is_gap_down):
                 reason = f"5S DONCHIAN 24: Lower Support Reversal ({dc_lower:.5f}). High Sureshot BUY (CALL)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "call", "confidence": 95, "reason": reason}
 
-            elif is_touching_dc_upper and (upper_wick_ratio >= 0.12 or c_close < c_open or is_gap_up):
+            elif is_touching_dc_upper and (upper_wick_ratio >= 0.15 or c_close < c_open or is_gap_up):
                 reason = f"5S DONCHIAN 24: Upper Resistance Reversal ({dc_upper:.5f}). High Sureshot SELL (PUT)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "put", "confidence": 95, "reason": reason}
 
-            # Rule 2: 2-CANDLE MICRO-TREND MOMENTUM CONTINUATION (93% Sureshot)
-            # Two consecutive green candles above EMA_20 -> High probability 3rd green candle continuation
-            elif is_uptrend and (p_close > p_open) and (c_close > c_open):
-                reason = "5S SURESHOT: 2 Consecutive Green Bars in Uptrend. Signal = BUY (CALL)."
+            # Setup 2: 2-CANDLE MICRO-TREND MOMENTUM EXPANSION (93% Sureshot - Requires Solid Body >= 30%)
+            # Two consecutive green candles above EMA_20 with solid body -> High probability 3rd green candle expansion
+            elif is_uptrend and (p_close > p_open) and (c_close > c_open) and (body_ratio >= 0.30):
+                reason = f"5S SURESHOT: 2 Consecutive Solid Green Bars in Uptrend (Body {body_ratio*100:.0f}%). Signal = BUY (CALL)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "call", "confidence": 93, "reason": reason}
-            # Two consecutive red candles below EMA_20 -> High probability 3rd red candle continuation
-            elif is_downtrend and (p_close < p_open) and (c_close < c_open):
-                reason = "5S SURESHOT: 2 Consecutive Red Bars in Downtrend. Signal = SELL (PUT)."
+            # Two consecutive red candles below EMA_20 with solid body -> High probability 3rd red candle expansion
+            elif is_downtrend and (p_close < p_open) and (c_close < c_open) and (body_ratio >= 0.30):
+                reason = f"5S SURESHOT: 2 Consecutive Solid Red Bars in Downtrend (Body {body_ratio*100:.0f}%). Signal = SELL (PUT)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "put", "confidence": 93, "reason": reason}
 
-            # Rule 3: WICK REJECTION & GAP REVERSALS (90% Sureshot)
-            elif lower_wick_ratio >= 0.18 or is_gap_down:
-                reason = f"5S REVERSAL: Lower Wick Rejection ({lower_wick_ratio*100:.1f}%). Signal = BUY (CALL)."
+            # Setup 3: WICK REJECTION & GAP REVERSALS (90% Sureshot - Requires Wick >= 22%)
+            elif lower_wick_ratio >= 0.22 or is_gap_down:
+                reason = f"5S REVERSAL: Strong Lower Wick Rejection ({lower_wick_ratio*100:.1f}%). Signal = BUY (CALL)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "call", "confidence": 90, "reason": reason}
-            elif upper_wick_ratio >= 0.18 or is_gap_up:
-                reason = f"5S REVERSAL: Upper Wick Rejection ({upper_wick_ratio*100:.1f}%). Signal = SELL (PUT)."
+            elif upper_wick_ratio >= 0.22 or is_gap_up:
+                reason = f"5S REVERSAL: Strong Upper Wick Rejection ({upper_wick_ratio*100:.1f}%). Signal = SELL (PUT)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "put", "confidence": 90, "reason": reason}
 
-            # Rule 4: ENGULFING PATTERNS (88% Sureshot)
-            elif is_bullish_engulfing:
-                reason = "5S ENGULFING: Bullish Engulfing pattern. Signal = BUY (CALL)."
+            # Setup 4: BULLISH / BEARISH ENGULFING IN TREND DIRECTION (88% Sureshot)
+            elif is_bullish_engulfing and is_uptrend:
+                reason = "5S ENGULFING: Bullish Engulfing in Uptrend. Signal = BUY (CALL)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "call", "confidence": 88, "reason": reason}
-            elif is_bearish_engulfing:
-                reason = "5S ENGULFING: Bearish Engulfing pattern. Signal = SELL (PUT)."
+            elif is_bearish_engulfing and is_downtrend:
+                reason = "5S ENGULFING: Bearish Engulfing in Downtrend. Signal = SELL (PUT)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "put", "confidence": 88, "reason": reason}
 
-            # Rule 5: TREND DIRECTION FALLBACK (85% Sureshot)
-            elif is_uptrend:
-                reason = "5S TREND: Price > EMA_20 Uptrend. Signal = BUY (CALL)."
-                logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "call", "confidence": 85, "reason": reason}
+            # NO STRICT SURESHOT SETUP FOUND -> SKIP 50/50 NOISE (ELIMINATES RANDOM LOSSES)
             else:
-                reason = "5S TREND: Price < EMA_20 Downtrend. Signal = SELL (PUT)."
-                logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "put", "confidence": 85, "reason": reason}
+                logger.info(f"[{asset_name}] 5S SURESHOT: No high-probability setup. Skipping 50/50 noise to protect win-rate.")
+                return {"signal": "doji", "confidence": 0, "reason": "No sureshot pattern. Skipped low-probability 50/50 noise."}
 
         # Calculate EMA 50
         df['EMA_50'] = df['close'].ewm(span=50, adjust=False).mean()
