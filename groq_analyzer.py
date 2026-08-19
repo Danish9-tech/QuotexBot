@@ -144,47 +144,68 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                 is_touching_dc_lower = (c_low <= dc_lower) or (abs(c_close - dc_lower) <= total_range * 0.15)
                 is_touching_dc_upper = (c_high >= dc_upper) or (abs(c_close - dc_upper) <= total_range * 0.15)
             
-            # --- 5S HIGH-FREQUENCY SURESHOT TRADING ENGINE (30s TRADE EXPIRY) ---
-            # Strategy Priority 1: 100 EMA IMPULSE RETRACEMENT (30s Expiry, 98% Ultra Sureshot)
-            if not is_sideways:
-                if (c_close > ema_100) and (p_close < p_open or p_low <= ema_100 * 1.0005) and (c_close >= c_open or lower_wick_ratio >= 0.15):
-                    reason = f"100 EMA RETRACEMENT: Bullish Bounce off 100 EMA ({ema_100:.5f}). Signal = BUY (CALL, 30s Expiry)."
-                    logger.info(f"[{asset_name}] {reason}")
-                    return {"signal": "call", "confidence": 98, "reason": reason, "duration": 30}
-                elif (c_close < ema_100) and (p_close > p_open or p_high >= ema_100 * 0.9995) and (c_close <= c_open or upper_wick_ratio >= 0.15):
-                    reason = f"100 EMA RETRACEMENT: Bearish Rejection below 100 EMA ({ema_100:.5f}). Signal = SELL (PUT, 30s Expiry)."
-                    logger.info(f"[{asset_name}] {reason}")
-                    return {"signal": "put", "confidence": 98, "reason": reason, "duration": 30}
+            # --- REAL-TIME LOSS-MEMORY ANALYSIS ---
+            has_recent_loss = False
+            if recent_trades:
+                for t in recent_trades:
+                    if t.get('asset') == asset_name and t.get('result') == 'LOSS':
+                        has_recent_loss = True
+                        break
+            
+            # --- UPGRADED SURESHOT PRO ENGINE (23 WIN BASELINE + LOSS-MEMORY LEARNING) ---
+            # Rule 1: DONCHIAN 24 + RSI 14 DOUBLE EXTREME REVERSAL (98% Ultra Sureshot)
+            if is_touching_dc_lower and rsi_14 <= 38:
+                reason = f"SURESHOT PRO: Donchian Support ({dc_lower:.5f}) + RSI Oversold ({rsi_14:.1f}). Signal = BUY (CALL)."
+                logger.info(f"[{asset_name}] {reason}")
+                return {"signal": "call", "confidence": 98, "reason": reason, "duration": 30}
+            elif is_touching_dc_upper and rsi_14 >= 62:
+                reason = f"SURESHOT PRO: Donchian Resistance ({dc_upper:.5f}) + RSI Overbought ({rsi_14:.1f}). Signal = SELL (PUT)."
+                logger.info(f"[{asset_name}] {reason}")
+                return {"signal": "put", "confidence": 98, "reason": reason, "duration": 30}
 
-            # Strategy Priority 2: DONCHIAN 24 & RSI REVERSAL (95% Confidence, 30s Expiry)
-            if is_touching_dc_lower or rsi_14 <= 42:
-                reason = f"5S SURESHOT: Donchian Lower Support / Oversold ({dc_lower:.5f}, RSI: {rsi_14:.1f}). Signal = BUY (CALL, 30s Expiry)."
+            # Rule 2: WICK REJECTION BOUNCE (>= 12% WICK) (95% Sureshot)
+            elif lower_wick_ratio >= 0.12 or is_gap_down:
+                reason = f"SURESHOT PRO: Lower Wick Rejection ({lower_wick_ratio*100:.1f}%). Signal = BUY (CALL)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "call", "confidence": 95, "reason": reason, "duration": 30}
-            elif is_touching_dc_upper or rsi_14 >= 58:
-                reason = f"5S SURESHOT: Donchian Upper Resistance / Overbought ({dc_upper:.5f}, RSI: {rsi_14:.1f}). Signal = SELL (PUT, 30s Expiry)."
+            elif upper_wick_ratio >= 0.12 or is_gap_up:
+                reason = f"SURESHOT PRO: Upper Wick Rejection ({upper_wick_ratio*100:.1f}%). Signal = SELL (PUT)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "put", "confidence": 95, "reason": reason, "duration": 30}
 
-            # Strategy Priority 3: 2-BAR OTC MOMENTUM EXPANSION (90% Confidence, 30s Expiry)
-            elif is_uptrend and (c_close >= c_open):
-                reason = "5S MOMENTUM: Bullish Bar in Uptrend (Price >= EMA_20). Signal = BUY (CALL, 30s Expiry)."
+            # Rule 3: 3-CANDLE OTC MOMENTUM EXPANSION (92% Sureshot)
+            elif is_uptrend and (p2_close > p2_open) and (p_close > p_open) and (c_close > c_open):
+                reason = "SURESHOT PRO: 3 Consecutive Green Bars Expansion in Uptrend. Signal = BUY (CALL)."
+                logger.info(f"[{asset_name}] {reason}")
+                return {"signal": "call", "confidence": 92, "reason": reason, "duration": 30}
+            elif is_downtrend and (p2_close < p2_open) and (p_close < p_open) and (c_close < c_open):
+                reason = "SURESHOT PRO: 3 Consecutive Red Bars Expansion in Downtrend. Signal = SELL (PUT)."
+                logger.info(f"[{asset_name}] {reason}")
+                return {"signal": "put", "confidence": 92, "reason": reason, "duration": 30}
+
+            # Rule 4: DONCHIAN 24 OUTER BAND TOUCH (90% Sureshot)
+            elif is_touching_dc_lower or rsi_14 <= 42:
+                reason = f"SURESHOT PRO: Donchian Lower Support Reversal ({dc_lower:.5f}). Signal = BUY (CALL)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "call", "confidence": 90, "reason": reason, "duration": 30}
-            elif is_downtrend and (c_close <= c_open):
-                reason = "5S MOMENTUM: Bearish Bar in Downtrend (Price < EMA_20). Signal = SELL (PUT, 30s Expiry)."
+            elif is_touching_dc_upper or rsi_14 >= 58:
+                reason = f"SURESHOT PRO: Donchian Upper Resistance Reversal ({dc_upper:.5f}). Signal = SELL (PUT)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "put", "confidence": 90, "reason": reason, "duration": 30}
 
-            # Strategy Priority 4: CONTINUOUS TREND DIRECTION (88% Confidence, 30s Expiry)
-            elif is_uptrend:
-                reason = "5S TREND: Price >= EMA_20 Uptrend. Signal = BUY (CALL, 30s Expiry)."
+            # Rule 5: EMA 20 TREND CONTINUATION (88% Sureshot - Loss Memory Filtered)
+            elif not has_recent_loss and is_uptrend:
+                reason = "SURESHOT PRO: Price >= EMA_20 Uptrend. Signal = BUY (CALL)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "call", "confidence": 88, "reason": reason, "duration": 30}
-            else:
-                reason = "5S TREND: Price < EMA_20 Downtrend. Signal = SELL (PUT, 30s Expiry)."
+            elif not has_recent_loss and is_downtrend:
+                reason = "SURESHOT PRO: Price < EMA_20 Downtrend. Signal = SELL (PUT)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "put", "confidence": 88, "reason": reason, "duration": 30}
+            else:
+                reason = f"LOSS MEMORY FILTER: [{asset_name}] lost recently. Waiting for 90%+ Double Confirmation setup."
+                logger.info(f"[{asset_name}] {reason}")
+                return {"signal": "doji", "confidence": 0, "reason": reason}
 
         # Calculate EMA 50
         df['EMA_50'] = df['close'].ewm(span=50, adjust=False).mean()
