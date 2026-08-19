@@ -136,13 +136,7 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                 is_touching_dc_lower = (c_low <= dc_lower) or (abs(c_close - dc_lower) <= total_range * 0.15)
                 is_touching_dc_upper = (c_high >= dc_upper) or (abs(c_close - dc_upper) <= total_range * 0.15)
             
-            # --- 5S HIGH-FREQUENCY SURESHOT TRADING ENGINE (ZERO UNNECESSARY SKIPS) ---
-            # Doji / Zero-Movement Protection (Skip only flat candles)
-            if total_range < 0.000001 or body_size == 0:
-                reason = f"5S DOJI: Flat candle detected (Range: {total_range:.6f}). Skipping."
-                logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "doji", "confidence": 0, "reason": reason}
-
+            # --- 5S HIGH-FREQUENCY SURESHOT TRADING ENGINE (100% ACTIVE TRADING - ZERO SKIPS) ---
             # Setup 1: DONCHIAN 24 & RSI REVERSAL (95% Confidence)
             if is_touching_dc_lower or rsi_14 <= 42:
                 reason = f"5S SURESHOT: Donchian Lower Support / Oversold ({dc_lower:.5f}, RSI: {rsi_14:.1f}). Signal = BUY (CALL)."
