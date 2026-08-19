@@ -2106,13 +2106,7 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
 
 
                  # 4c. Place the Trade
-                 actual_duration = custom_dur if custom_dur is not None else duration_or_timeframe_value
-                 if trade_mode == "TIMER" and duration_or_timeframe_value >= 30:
-                     elapsed_in_candle = int(time.time()) % candle_size
-                     if elapsed_in_candle > 0:
-                         actual_duration = max(5, duration_or_timeframe_value - elapsed_in_candle)
-                         logger.info(f"[{asset_name_open}] Adjusted trade duration from {duration_or_timeframe_value}s to {actual_duration}s to align with candle close (elapsed: {elapsed_in_candle}s).")
-
+                 actual_duration = 30  # Strictly enforce 30-second trade expiry
                  logger.info(f"[{asset_name_open}] Placing {direction.upper()} trade. Amount: {current_trade_amount}, Exp: {actual_duration}s, Mode: {trade_mode}")
                  trade_placed_success = False
                  profit_or_loss_amount = 0
