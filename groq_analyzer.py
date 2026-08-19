@@ -75,11 +75,12 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
             # Calculate 20-period EMA & RSI 14 for Institutional Anti-Broker Analysis
             df['EMA_20'] = df['close'].ewm(span=20, adjust=False).mean()
             
+            # Robust RSI 14 calculation with Exponential Moving Average (EWM)
             delta = df['close'].diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=min(14, len(df))).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=min(14, len(df))).mean()
-            rs = gain / (loss.replace(0, 0.000001))
-            df['RSI_14'] = 100 - (100 / (1 + rs))
+            gain = (delta.where(delta > 0, 0.0)).ewm(alpha=1/14, adjust=False).mean()
+            loss = (-delta.where(delta < 0, 0.0)).ewm(alpha=1/14, adjust=False).mean()
+            rs = gain / loss.replace(0, 1e-9)
+            df['RSI_14'] = 100.0 - (100.0 / (1.0 + rs))
             
             last_candle = df.iloc[-1]
             prev_candle = df.iloc[-2]
@@ -105,9 +106,10 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
             lower_wick_ratio = lower_wick / total_range
             body_ratio = body_size / total_range
             
-            # Trend Check (EMA 20 & RSI 14)
-            ema_20 = float(last_candle['EMA_20'])
-            rsi_14 = float(last_candle['RSI_14']) if not pd.isna(last_candle.get('RSI_14')) else 50.0
+            # Trend Check (EMA 20 & RSI 14 with safe default)
+            ema_20 = float(last_candle['EMA_20']) if not pd.isna(last_candle.get('EMA_20')) else c_close
+            raw_rsi = last_candle.get('RSI_14', 50.0)
+            rsi_14 = float(raw_rsi) if (pd.notna(raw_rsi) and 1.0 <= float(raw_rsi) <= 99.0) else 50.0
             
             is_uptrend = c_close >= ema_20
             is_downtrend = c_close < ema_20
@@ -125,16 +127,21 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
             dc_upper = float(last_candle['DC_Upper']) if not pd.isna(last_candle.get('DC_Upper')) else c_high
             dc_lower = float(last_candle['DC_Lower']) if not pd.isna(last_candle.get('DC_Lower')) else c_low
             
-            is_touching_dc_lower = (c_low <= dc_lower) or (abs(c_close - dc_lower) <= total_range * 0.05)
-            is_touching_dc_upper = (c_high >= dc_upper) or (abs(c_close - dc_upper) <= total_range * 0.05)
+            # Validate Donchian Channel (Must be > 0 and valid range)
+            if dc_lower <= 0 or dc_upper <= 0 or dc_upper == dc_lower:
+                is_touching_dc_lower = False
+                is_touching_dc_upper = False
+            else:
+                is_touching_dc_lower = (c_low <= dc_lower) or (abs(c_close - dc_lower) <= total_range * 0.05)
+                is_touching_dc_upper = (c_high >= dc_upper) or (abs(c_close - dc_upper) <= total_range * 0.05)
             
             # --- INSTITUTIONAL ANTI-BROKER 5S SURESHOT ENGINE ---
-            # Rule 1: RSI 14 EXTREME + DONCHIAN SUPPORT/RESISTANCE REVERSAL (98% Ultra Sureshot)
-            if is_touching_dc_lower and rsi_14 <= 38:
+            # Rule 1: RSI 14 EXTREME (15-38 / 62-85) + DONCHIAN SUPPORT/RESISTANCE REVERSAL (98% Ultra Sureshot)
+            if is_touching_dc_lower and (15.0 <= rsi_14 <= 38.0):
                 reason = f"INSTITUTIONAL SURESHOT: Donchian Support ({dc_lower:.5f}) + RSI Oversold ({rsi_14:.1f}). Signal = BUY (CALL)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "call", "confidence": 98, "reason": reason}
-            elif is_touching_dc_upper and rsi_14 >= 62:
+            elif is_touching_dc_upper and (62.0 <= rsi_14 <= 85.0):
                 reason = f"INSTITUTIONAL SURESHOT: Donchian Resistance ({dc_upper:.5f}) + RSI Overbought ({rsi_14:.1f}). Signal = SELL (PUT)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "put", "confidence": 98, "reason": reason}
