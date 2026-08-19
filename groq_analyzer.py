@@ -152,56 +152,56 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                         has_recent_loss = True
                         break
             
-            # --- UPGRADED SURESHOT PRO ENGINE (23 WIN BASELINE + LOSS-MEMORY LEARNING) ---
+            # --- UPGRADED SURESHOT PRO ENGINE (5S TRADE EXPIRY - 100% ACTIVE) ---
             # Rule 1: DONCHIAN 24 + RSI 14 DOUBLE EXTREME REVERSAL (98% Ultra Sureshot)
             if is_touching_dc_lower and rsi_14 <= 38:
-                reason = f"SURESHOT PRO: Donchian Support ({dc_lower:.5f}) + RSI Oversold ({rsi_14:.1f}). Signal = BUY (CALL)."
+                reason = f"SURESHOT PRO: Donchian Support ({dc_lower:.5f}) + RSI Oversold ({rsi_14:.1f}). Signal = BUY (CALL, 5s Expiry)."
                 logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "call", "confidence": 98, "reason": reason, "duration": 30}
+                return {"signal": "call", "confidence": 98, "reason": reason, "duration": 5}
             elif is_touching_dc_upper and rsi_14 >= 62:
-                reason = f"SURESHOT PRO: Donchian Resistance ({dc_upper:.5f}) + RSI Overbought ({rsi_14:.1f}). Signal = SELL (PUT)."
+                reason = f"SURESHOT PRO: Donchian Resistance ({dc_upper:.5f}) + RSI Overbought ({rsi_14:.1f}). Signal = SELL (PUT, 5s Expiry)."
                 logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "put", "confidence": 98, "reason": reason, "duration": 30}
+                return {"signal": "put", "confidence": 98, "reason": reason, "duration": 5}
 
             # Rule 2: WICK REJECTION BOUNCE (>= 12% WICK) (95% Sureshot)
             elif lower_wick_ratio >= 0.12 or is_gap_down:
-                reason = f"SURESHOT PRO: Lower Wick Rejection ({lower_wick_ratio*100:.1f}%). Signal = BUY (CALL)."
+                reason = f"SURESHOT PRO: Lower Wick Rejection ({lower_wick_ratio*100:.1f}%). Signal = BUY (CALL, 5s Expiry)."
                 logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "call", "confidence": 95, "reason": reason, "duration": 30}
+                return {"signal": "call", "confidence": 95, "reason": reason, "duration": 5}
             elif upper_wick_ratio >= 0.12 or is_gap_up:
-                reason = f"SURESHOT PRO: Upper Wick Rejection ({upper_wick_ratio*100:.1f}%). Signal = SELL (PUT)."
+                reason = f"SURESHOT PRO: Upper Wick Rejection ({upper_wick_ratio*100:.1f}%). Signal = SELL (PUT, 5s Expiry)."
                 logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "put", "confidence": 95, "reason": reason, "duration": 30}
+                return {"signal": "put", "confidence": 95, "reason": reason, "duration": 5}
 
             # Rule 3: 3-CANDLE OTC MOMENTUM EXPANSION (92% Sureshot)
             elif is_uptrend and (p2_close > p2_open) and (p_close > p_open) and (c_close > c_open):
-                reason = "SURESHOT PRO: 3 Consecutive Green Bars Expansion in Uptrend. Signal = BUY (CALL)."
+                reason = "SURESHOT PRO: 3 Consecutive Green Bars Expansion in Uptrend. Signal = BUY (CALL, 5s Expiry)."
                 logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "call", "confidence": 92, "reason": reason, "duration": 30}
+                return {"signal": "call", "confidence": 92, "reason": reason, "duration": 5}
             elif is_downtrend and (p2_close < p2_open) and (p_close < p_open) and (c_close < c_open):
-                reason = "SURESHOT PRO: 3 Consecutive Red Bars Expansion in Downtrend. Signal = SELL (PUT)."
+                reason = "SURESHOT PRO: 3 Consecutive Red Bars Expansion in Downtrend. Signal = SELL (PUT, 5s Expiry)."
                 logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "put", "confidence": 92, "reason": reason, "duration": 30}
+                return {"signal": "put", "confidence": 92, "reason": reason, "duration": 5}
 
             # Rule 4: DONCHIAN 24 OUTER BAND TOUCH (90% Sureshot)
             elif is_touching_dc_lower or rsi_14 <= 42:
-                reason = f"SURESHOT PRO: Donchian Lower Support Reversal ({dc_lower:.5f}). Signal = BUY (CALL)."
+                reason = f"SURESHOT PRO: Donchian Lower Support Reversal ({dc_lower:.5f}). Signal = BUY (CALL, 5s Expiry)."
                 logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "call", "confidence": 90, "reason": reason, "duration": 30}
+                return {"signal": "call", "confidence": 90, "reason": reason, "duration": 5}
             elif is_touching_dc_upper or rsi_14 >= 58:
-                reason = f"SURESHOT PRO: Donchian Upper Resistance Reversal ({dc_upper:.5f}). Signal = SELL (PUT)."
+                reason = f"SURESHOT PRO: Donchian Upper Resistance Reversal ({dc_upper:.5f}). Signal = SELL (PUT, 5s Expiry)."
                 logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "put", "confidence": 90, "reason": reason, "duration": 30}
+                return {"signal": "put", "confidence": 90, "reason": reason, "duration": 5}
 
             # Rule 5: EMA 20 TREND CONTINUATION (88% Sureshot - Continuous Execution)
             elif is_uptrend:
-                reason = "SURESHOT PRO: Price >= EMA_20 Uptrend. Signal = BUY (CALL)."
+                reason = "SURESHOT PRO: Price >= EMA_20 Uptrend. Signal = BUY (CALL, 5s Expiry)."
                 logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "call", "confidence": 88, "reason": reason, "duration": 30}
+                return {"signal": "call", "confidence": 88, "reason": reason, "duration": 5}
             else:
-                reason = "SURESHOT PRO: Price < EMA_20 Downtrend. Signal = SELL (PUT)."
+                reason = "SURESHOT PRO: Price < EMA_20 Downtrend. Signal = SELL (PUT, 5s Expiry)."
                 logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "put", "confidence": 88, "reason": reason, "duration": 30}
+                return {"signal": "put", "confidence": 88, "reason": reason, "duration": 5}
 
         # Calculate EMA 50
         df['EMA_50'] = df['close'].ewm(span=50, adjust=False).mean()
