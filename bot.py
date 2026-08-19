@@ -1902,16 +1902,17 @@ async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size:
             except Exception as db_err:
                 logger.error(f"Failed to save market data to MongoDB: {db_err}")
             
+            custom_duration = ai_result.get("duration", None)
             # Execute ONLY if confidence is high and it's a clear signal
             if signal in ['call', 'put'] and confidence >= 65:
                 logger.info(f"[{asset_name}] HIGH CONFIDENCE AI Signal ({confidence}%): {signal.upper()} - EXECUTING TRADE!")
-                return signal, reason
+                return signal, reason, custom_duration
             else:
                 logger.info(f"[{asset_name}] AI suggests DOJI/Wait. Signal: {signal}, Confidence: {confidence}% (Need 65%+)")
-                return 'doji', reason
+                return 'doji', reason, None
         else:
             logger.warning(f"[{asset_name}] No candle data received or empty list.")
-            return None, ""
+            return None, "", None
     except Exception as e:
         logger.error(f"[{asset_name}] Error fetching candle data or calling AI: {e}", exc_info=True)
         error_str = str(e).lower()
@@ -2092,7 +2093,7 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
 
 
                  # 4b. Get Trading Direction
-                 direction, ai_reason = await _get_candle_direction(qx_client, asset_name_open, candle_size, account_doc_id)
+                 direction, ai_reason, custom_dur = await _get_candle_direction(qx_client, asset_name_open, candle_size, account_doc_id)
                  if direction is None:
                       logger.warning(f"[{asset_name_open}] Skipping: Could not determine trade direction.")
                       await asyncio.sleep(5)
@@ -2105,7 +2106,7 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
 
 
                  # 4c. Place the Trade
-                 actual_duration = duration_or_timeframe_value
+                 actual_duration = custom_dur if custom_dur is not None else duration_or_timeframe_value
                  if trade_mode == "TIMER" and duration_or_timeframe_value >= 30:
                      elapsed_in_candle = int(time.time()) % candle_size
                      if elapsed_in_candle > 0:

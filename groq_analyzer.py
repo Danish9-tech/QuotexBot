@@ -72,8 +72,9 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
             if len(df) < 10:
                 return {"signal": "doji", "confidence": 0, "reason": "Not enough 5s candles for trend & pattern analysis"}
                 
-            # Calculate 20-period EMA & RSI 14 for Institutional Anti-Broker Analysis
+            # Calculate 20-period EMA, 100-period EMA & RSI 14 for Institutional Anti-Broker Analysis
             df['EMA_20'] = df['close'].ewm(span=20, adjust=False).mean()
+            df['EMA_100'] = df['close'].ewm(span=min(100, len(df)), adjust=False).mean()
             
             # Robust RSI 14 calculation with Exponential Moving Average (EWM)
             delta = df['close'].diff()
@@ -106,13 +107,21 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
             lower_wick_ratio = lower_wick / total_range
             body_ratio = body_size / total_range
             
-            # Trend Check (EMA 20 & RSI 14 with safe default)
+            # Trend Check (EMA 20, EMA 100 & RSI 14)
             ema_20 = float(last_candle['EMA_20']) if not pd.isna(last_candle.get('EMA_20')) else c_close
+            ema_100 = float(last_candle['EMA_100']) if not pd.isna(last_candle.get('EMA_100')) else c_close
             raw_rsi = last_candle.get('RSI_14', 50.0)
             rsi_14 = float(raw_rsi) if (pd.notna(raw_rsi) and 1.0 <= float(raw_rsi) <= 99.0) else 50.0
             
             is_uptrend = c_close >= ema_20
             is_downtrend = c_close < ema_20
+            
+            # Market State Filter (Forbidden Sideways / Consolidation Check)
+            recent_high = df['high'].tail(15).max()
+            recent_low = df['low'].tail(15).min()
+            recent_range = recent_high - recent_low
+            avg_bar_range = (df['high'] - df['low']).tail(15).mean()
+            is_sideways = (recent_range < (avg_bar_range * 2.0)) or (abs(c_close - ema_100) < total_range * 0.05 and abs(p_close - ema_100) < total_range * 0.05)
             
             # Gap detection
             gap = c_open - p_close
@@ -132,12 +141,22 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                 is_touching_dc_lower = False
                 is_touching_dc_upper = False
             else:
-                # 15% proximity threshold for high-frequency 5s Donchian triggers
                 is_touching_dc_lower = (c_low <= dc_lower) or (abs(c_close - dc_lower) <= total_range * 0.15)
                 is_touching_dc_upper = (c_high >= dc_upper) or (abs(c_close - dc_upper) <= total_range * 0.15)
             
-            # --- 5S HIGH-FREQUENCY SURESHOT TRADING ENGINE (100% ACTIVE TRADING - ZERO SKIPS) ---
-            # Setup 1: DONCHIAN 24 & RSI REVERSAL (95% Confidence)
+            # --- 5S HIGH-FREQUENCY SURESHOT TRADING ENGINE (WITH 100 EMA RETRACEMENT) ---
+            # Strategy Priority 1: 100 EMA IMPULSE RETRACEMENT (30s Expiry, 98% Ultra Sureshot)
+            if not is_sideways:
+                if (c_close > ema_100) and (p_close < p_open or p_low <= ema_100 * 1.0005) and (c_close >= c_open or lower_wick_ratio >= 0.15):
+                    reason = f"100 EMA RETRACEMENT: Bullish Bounce off 100 EMA ({ema_100:.5f}). Signal = BUY (CALL, 30s Expiry)."
+                    logger.info(f"[{asset_name}] {reason}")
+                    return {"signal": "call", "confidence": 98, "reason": reason, "duration": 30}
+                elif (c_close < ema_100) and (p_close > p_open or p_high >= ema_100 * 0.9995) and (c_close <= c_open or upper_wick_ratio >= 0.15):
+                    reason = f"100 EMA RETRACEMENT: Bearish Rejection below 100 EMA ({ema_100:.5f}). Signal = SELL (PUT, 30s Expiry)."
+                    logger.info(f"[{asset_name}] {reason}")
+                    return {"signal": "put", "confidence": 98, "reason": reason, "duration": 30}
+
+            # Strategy Priority 2: DONCHIAN 24 & RSI REVERSAL (95% Confidence)
             if is_touching_dc_lower or rsi_14 <= 42:
                 reason = f"5S SURESHOT: Donchian Lower Support / Oversold ({dc_lower:.5f}, RSI: {rsi_14:.1f}). Signal = BUY (CALL)."
                 logger.info(f"[{asset_name}] {reason}")
@@ -147,7 +166,7 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "put", "confidence": 95, "reason": reason}
 
-            # Setup 2: 2-BAR OTC MOMENTUM EXPANSION (90% Confidence)
+            # Strategy Priority 3: 2-BAR OTC MOMENTUM EXPANSION (90% Confidence)
             elif is_uptrend and (c_close >= c_open):
                 reason = "5S MOMENTUM: Bullish Bar in Uptrend (Price >= EMA_20). Signal = BUY (CALL)."
                 logger.info(f"[{asset_name}] {reason}")
@@ -157,7 +176,7 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "put", "confidence": 90, "reason": reason}
 
-            # Setup 3: CONTINUOUS TREND DIRECTION (88% Confidence - ACTIVE TRADING)
+            # Strategy Priority 4: CONTINUOUS TREND DIRECTION (88% Confidence)
             elif is_uptrend:
                 reason = "5S TREND: Price >= EMA_20 Uptrend. Signal = BUY (CALL)."
                 logger.info(f"[{asset_name}] {reason}")
