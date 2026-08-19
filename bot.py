@@ -1840,8 +1840,9 @@ async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size:
         # Using 60 to have a small buffer
         # Wait, get_candles parameter order: asset_name, end_time, offset_seconds, amount
         # Wait! Is it amount or size? In the original code it says `candle_size`. Let's assume it passes the number of candles requested.
-        # Fetch 200 candles worth of seconds
-        amount_of_seconds = 200 * candle_size 
+        # Fetch 50 candles worth of seconds for 5s trades (250s) to prevent WebSocket batch timeouts
+        num_candles_needed = 50 if candle_size <= 5 else 60
+        amount_of_seconds = num_candles_needed * candle_size 
         candles = await qx_client.get_historical_candles(asset_name, amount_of_seconds, candle_size) 
 
         if candles and isinstance(candles, list) and len(candles) > 0:
