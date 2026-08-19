@@ -144,7 +144,7 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                 is_touching_dc_lower = (c_low <= dc_lower) or (abs(c_close - dc_lower) <= total_range * 0.15)
                 is_touching_dc_upper = (c_high >= dc_upper) or (abs(c_close - dc_upper) <= total_range * 0.15)
             
-            # --- 5S HIGH-FREQUENCY SURESHOT TRADING ENGINE (WITH 100 EMA RETRACEMENT) ---
+            # --- 5S HIGH-FREQUENCY SURESHOT TRADING ENGINE (30s TRADE EXPIRY) ---
             # Strategy Priority 1: 100 EMA IMPULSE RETRACEMENT (30s Expiry, 98% Ultra Sureshot)
             if not is_sideways:
                 if (c_close > ema_100) and (p_close < p_open or p_low <= ema_100 * 1.0005) and (c_close >= c_open or lower_wick_ratio >= 0.15):
@@ -156,35 +156,35 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                     logger.info(f"[{asset_name}] {reason}")
                     return {"signal": "put", "confidence": 98, "reason": reason, "duration": 30}
 
-            # Strategy Priority 2: DONCHIAN 24 & RSI REVERSAL (95% Confidence)
+            # Strategy Priority 2: DONCHIAN 24 & RSI REVERSAL (95% Confidence, 30s Expiry)
             if is_touching_dc_lower or rsi_14 <= 42:
-                reason = f"5S SURESHOT: Donchian Lower Support / Oversold ({dc_lower:.5f}, RSI: {rsi_14:.1f}). Signal = BUY (CALL)."
+                reason = f"5S SURESHOT: Donchian Lower Support / Oversold ({dc_lower:.5f}, RSI: {rsi_14:.1f}). Signal = BUY (CALL, 30s Expiry)."
                 logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "call", "confidence": 95, "reason": reason}
+                return {"signal": "call", "confidence": 95, "reason": reason, "duration": 30}
             elif is_touching_dc_upper or rsi_14 >= 58:
-                reason = f"5S SURESHOT: Donchian Upper Resistance / Overbought ({dc_upper:.5f}, RSI: {rsi_14:.1f}). Signal = SELL (PUT)."
+                reason = f"5S SURESHOT: Donchian Upper Resistance / Overbought ({dc_upper:.5f}, RSI: {rsi_14:.1f}). Signal = SELL (PUT, 30s Expiry)."
                 logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "put", "confidence": 95, "reason": reason}
+                return {"signal": "put", "confidence": 95, "reason": reason, "duration": 30}
 
-            # Strategy Priority 3: 2-BAR OTC MOMENTUM EXPANSION (90% Confidence)
+            # Strategy Priority 3: 2-BAR OTC MOMENTUM EXPANSION (90% Confidence, 30s Expiry)
             elif is_uptrend and (c_close >= c_open):
-                reason = "5S MOMENTUM: Bullish Bar in Uptrend (Price >= EMA_20). Signal = BUY (CALL)."
+                reason = "5S MOMENTUM: Bullish Bar in Uptrend (Price >= EMA_20). Signal = BUY (CALL, 30s Expiry)."
                 logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "call", "confidence": 90, "reason": reason}
+                return {"signal": "call", "confidence": 90, "reason": reason, "duration": 30}
             elif is_downtrend and (c_close <= c_open):
-                reason = "5S MOMENTUM: Bearish Bar in Downtrend (Price < EMA_20). Signal = SELL (PUT)."
+                reason = "5S MOMENTUM: Bearish Bar in Downtrend (Price < EMA_20). Signal = SELL (PUT, 30s Expiry)."
                 logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "put", "confidence": 90, "reason": reason}
+                return {"signal": "put", "confidence": 90, "reason": reason, "duration": 30}
 
-            # Strategy Priority 4: CONTINUOUS TREND DIRECTION (88% Confidence)
+            # Strategy Priority 4: CONTINUOUS TREND DIRECTION (88% Confidence, 30s Expiry)
             elif is_uptrend:
-                reason = "5S TREND: Price >= EMA_20 Uptrend. Signal = BUY (CALL)."
+                reason = "5S TREND: Price >= EMA_20 Uptrend. Signal = BUY (CALL, 30s Expiry)."
                 logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "call", "confidence": 88, "reason": reason}
+                return {"signal": "call", "confidence": 88, "reason": reason, "duration": 30}
             else:
-                reason = "5S TREND: Price < EMA_20 Downtrend. Signal = SELL (PUT)."
+                reason = "5S TREND: Price < EMA_20 Downtrend. Signal = SELL (PUT, 30s Expiry)."
                 logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "put", "confidence": 88, "reason": reason}
+                return {"signal": "put", "confidence": 88, "reason": reason, "duration": 30}
 
         # Calculate EMA 50
         df['EMA_50'] = df['close'].ewm(span=50, adjust=False).mean()
