@@ -193,19 +193,15 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "put", "confidence": 90, "reason": reason, "duration": 30}
 
-            # Rule 5: EMA 20 TREND CONTINUATION (88% Sureshot - Loss Memory Filtered)
-            elif not has_recent_loss and is_uptrend:
+            # Rule 5: EMA 20 TREND CONTINUATION (88% Sureshot - Continuous Execution)
+            elif is_uptrend:
                 reason = "SURESHOT PRO: Price >= EMA_20 Uptrend. Signal = BUY (CALL)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "call", "confidence": 88, "reason": reason, "duration": 30}
-            elif not has_recent_loss and is_downtrend:
+            else:
                 reason = "SURESHOT PRO: Price < EMA_20 Downtrend. Signal = SELL (PUT)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "put", "confidence": 88, "reason": reason, "duration": 30}
-            else:
-                reason = f"LOSS MEMORY FILTER: [{asset_name}] lost recently. Waiting for 90%+ Double Confirmation setup."
-                logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "doji", "confidence": 0, "reason": reason}
 
         # Calculate EMA 50
         df['EMA_50'] = df['close'].ewm(span=50, adjust=False).mean()
