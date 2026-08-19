@@ -2106,7 +2106,7 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
 
 
                  # 4c. Place the Trade
-                 actual_duration = custom_dur if custom_dur is not None else 10  # Strictly enforce 10-second trade expiry
+                 actual_duration = custom_dur if custom_dur is not None else 5  # Strictly enforce 5-second trade expiry
                  logger.info(f"[{asset_name_open}] Placing {direction.upper()} trade. Amount: {current_trade_amount}, Exp: {actual_duration}s, Mode: {trade_mode}")
                  trade_placed_success = False
                  profit_or_loss_amount = 0
