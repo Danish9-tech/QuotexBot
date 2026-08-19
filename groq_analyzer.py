@@ -176,15 +176,11 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "put", "confidence": 90, "reason": reason}
 
-            # Rule 5: CONTINUOUS TREND DIRECTION FALLBACK (85% Confidence - ZERO SKIPS)
-            elif is_uptrend:
-                reason = "5S TREND: Price >= EMA_20 Uptrend. Signal = BUY (CALL)."
-                logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "call", "confidence": 85, "reason": reason}
+            # Strict Sureshot Filter: Skip trade if no high-probability setup is present
             else:
-                reason = "5S TREND: Price < EMA_20 Downtrend. Signal = SELL (PUT)."
+                reason = "5S FILTER: No Sureshot pattern detected (Skipping 50/50 market noise)."
                 logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "put", "confidence": 85, "reason": reason}
+                return {"signal": "doji", "confidence": 0, "reason": reason}
 
         # Calculate EMA 50
         df['EMA_50'] = df['close'].ewm(span=50, adjust=False).mean()
