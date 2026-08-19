@@ -193,11 +193,15 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "put", "confidence": 90, "reason": reason, "duration": 10}
 
-            # Rule 5: HIGH-PROBABILITY FILTER (If no 90%+ Sureshot setup is present, wait for clean setup)
-            else:
-                reason = "SURESHOT FILTER: Waiting for Donchian Outer Band touch, Wick Rejection, or 3-bar Momentum Expansion."
+            # Rule 5: ACTIVE TREND FLOW CONTINUATION (100% Active Execution - Zero Skips)
+            elif is_uptrend:
+                reason = "SURESHOT PRO: Bullish Trend Flow (Price >= EMA_20). Signal = BUY (CALL, 10s Expiry)."
                 logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "doji", "confidence": 0, "reason": reason}
+                return {"signal": "call", "confidence": 88, "reason": reason, "duration": 10}
+            else:
+                reason = "SURESHOT PRO: Bearish Trend Flow (Price < EMA_20). Signal = SELL (PUT, 10s Expiry)."
+                logger.info(f"[{asset_name}] {reason}")
+                return {"signal": "put", "confidence": 88, "reason": reason, "duration": 10}
 
         # Calculate EMA 50
         df['EMA_50'] = df['close'].ewm(span=50, adjust=False).mean()
