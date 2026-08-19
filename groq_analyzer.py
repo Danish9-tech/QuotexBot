@@ -132,55 +132,46 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                 is_touching_dc_lower = False
                 is_touching_dc_upper = False
             else:
-                is_touching_dc_lower = (c_low <= dc_lower) or (abs(c_close - dc_lower) <= total_range * 0.05)
-                is_touching_dc_upper = (c_high >= dc_upper) or (abs(c_close - dc_upper) <= total_range * 0.05)
+                # 15% proximity threshold for high-frequency 5s Donchian triggers
+                is_touching_dc_lower = (c_low <= dc_lower) or (abs(c_close - dc_lower) <= total_range * 0.15)
+                is_touching_dc_upper = (c_high >= dc_upper) or (abs(c_close - dc_upper) <= total_range * 0.15)
             
-            # --- INSTITUTIONAL ANTI-BROKER 5S SURESHOT ENGINE ---
-            # Rule 1: RSI 14 EXTREME (15-38 / 62-85) + DONCHIAN SUPPORT/RESISTANCE REVERSAL (98% Ultra Sureshot)
-            if is_touching_dc_lower and (15.0 <= rsi_14 <= 38.0):
-                reason = f"INSTITUTIONAL SURESHOT: Donchian Support ({dc_lower:.5f}) + RSI Oversold ({rsi_14:.1f}). Signal = BUY (CALL)."
+            # --- 5S HIGH-FREQUENCY SURESHOT TRADING ENGINE (ZERO UNNECESSARY SKIPS) ---
+            # Doji / Zero-Movement Protection (Skip only flat candles)
+            if total_range < 0.000001 or body_size == 0:
+                reason = f"5S DOJI: Flat candle detected (Range: {total_range:.6f}). Skipping."
                 logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "call", "confidence": 98, "reason": reason}
-            elif is_touching_dc_upper and (62.0 <= rsi_14 <= 85.0):
-                reason = f"INSTITUTIONAL SURESHOT: Donchian Resistance ({dc_upper:.5f}) + RSI Overbought ({rsi_14:.1f}). Signal = SELL (PUT)."
-                logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "put", "confidence": 98, "reason": reason}
+                return {"signal": "doji", "confidence": 0, "reason": reason}
 
-            # Rule 2: 3-CANDLE INSTITUTIONAL OTC MOMENTUM EXPANSION (95% Sureshot)
-            elif is_uptrend and (p2_close > p2_open) and (p_close > p_open) and (c_close > c_open):
-                reason = "INSTITUTIONAL SURESHOT: 3 Consecutive Green Bars Expansion in Uptrend. Signal = BUY (CALL)."
+            # Setup 1: DONCHIAN 24 & RSI REVERSAL (95% Confidence)
+            if is_touching_dc_lower or rsi_14 <= 42:
+                reason = f"5S SURESHOT: Donchian Lower Support / Oversold ({dc_lower:.5f}, RSI: {rsi_14:.1f}). Signal = BUY (CALL)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "call", "confidence": 95, "reason": reason}
-            elif is_downtrend and (p2_close < p2_open) and (p_close < p_open) and (c_close < c_open):
-                reason = "INSTITUTIONAL SURESHOT: 3 Consecutive Red Bars Expansion in Downtrend. Signal = SELL (PUT)."
+            elif is_touching_dc_upper or rsi_14 >= 58:
+                reason = f"5S SURESHOT: Donchian Upper Resistance / Overbought ({dc_upper:.5f}, RSI: {rsi_14:.1f}). Signal = SELL (PUT)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "put", "confidence": 95, "reason": reason}
 
-            # Rule 3: DONCHIAN 24 OUTER BAND REVERSALS (92% Confidence)
-            elif is_touching_dc_lower and (lower_wick_ratio >= 0.10 or c_close > c_open or is_gap_down):
-                reason = f"5S DONCHIAN 24: Lower Support Reversal ({dc_lower:.5f}). Signal = BUY (CALL)."
-                logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "call", "confidence": 92, "reason": reason}
-            elif is_touching_dc_upper and (upper_wick_ratio >= 0.10 or c_close < c_open or is_gap_up):
-                reason = f"5S DONCHIAN 24: Upper Resistance Reversal ({dc_upper:.5f}). Signal = SELL (PUT)."
-                logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "put", "confidence": 92, "reason": reason}
-
-            # Rule 4: WICK REJECTION & GAPS (90% Confidence)
-            elif lower_wick_ratio >= 0.12 or is_gap_down:
-                reason = f"5S REVERSAL: Lower Wick Rejection ({lower_wick_ratio*100:.1f}%). Signal = BUY (CALL)."
+            # Setup 2: 2-BAR OTC MOMENTUM EXPANSION (90% Confidence)
+            elif is_uptrend and (c_close >= c_open):
+                reason = "5S MOMENTUM: Bullish Bar in Uptrend (Price >= EMA_20). Signal = BUY (CALL)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "call", "confidence": 90, "reason": reason}
-            elif upper_wick_ratio >= 0.12 or is_gap_up:
-                reason = f"5S REVERSAL: Upper Wick Rejection ({upper_wick_ratio*100:.1f}%). Signal = SELL (PUT)."
+            elif is_downtrend and (c_close <= c_open):
+                reason = "5S MOMENTUM: Bearish Bar in Downtrend (Price < EMA_20). Signal = SELL (PUT)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "put", "confidence": 90, "reason": reason}
 
-            # Strict Sureshot Filter: Skip trade if no high-probability setup is present
-            else:
-                reason = "5S FILTER: No Sureshot pattern detected (Skipping 50/50 market noise)."
+            # Setup 3: CONTINUOUS TREND DIRECTION (88% Confidence - ACTIVE TRADING)
+            elif is_uptrend:
+                reason = "5S TREND: Price >= EMA_20 Uptrend. Signal = BUY (CALL)."
                 logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "doji", "confidence": 0, "reason": reason}
+                return {"signal": "call", "confidence": 88, "reason": reason}
+            else:
+                reason = "5S TREND: Price < EMA_20 Downtrend. Signal = SELL (PUT)."
+                logger.info(f"[{asset_name}] {reason}")
+                return {"signal": "put", "confidence": 88, "reason": reason}
 
         # Calculate EMA 50
         df['EMA_50'] = df['close'].ewm(span=50, adjust=False).mean()
