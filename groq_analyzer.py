@@ -224,20 +224,26 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "put", "confidence": 90, "reason": reason, "duration": 30}
 
-            # Rule 5: ADAPTIVE MICRO-TREND (Strictly disabled if recent loss occurred on this asset)
-            elif asset_recent_loss_count == 0:
-                if is_uptrend or (c_close >= c_open):
-                    reason = "QUANT PRO [30s]: Micro-Trend Continuation (Price >= EMA_20). Signal = BUY (CALL, 30s Expiry)."
+            # Rule 5: ADAPTIVE MICRO-TREND CONTINUITY (100% Active Execution - ZERO SKIPS)
+            else:
+                if last_loss_direction == "call":
+                    # Recent CALL lost -> Adapt by favoring PUT (Short) to align with downside momentum
+                    reason = f"QUANT PRO [30s]: Adaptive Short Momentum (Reversing recent CALL loss on {asset_name}). Signal = SELL (PUT, 30s Expiry)."
+                    logger.info(f"[{asset_name}] {reason}")
+                    return {"signal": "put", "confidence": 88, "reason": reason, "duration": 30}
+                elif last_loss_direction == "put":
+                    # Recent PUT lost -> Adapt by favoring CALL (Long) to align with upside momentum
+                    reason = f"QUANT PRO [30s]: Adaptive Long Momentum (Reversing recent PUT loss on {asset_name}). Signal = BUY (CALL, 30s Expiry)."
+                    logger.info(f"[{asset_name}] {reason}")
+                    return {"signal": "call", "confidence": 88, "reason": reason, "duration": 30}
+                elif is_uptrend or (c_close >= c_open):
+                    reason = "QUANT PRO [30s]: Micro-Trend Flow (Price >= EMA_20). Signal = BUY (CALL, 30s Expiry)."
                     logger.info(f"[{asset_name}] {reason}")
                     return {"signal": "call", "confidence": 88, "reason": reason, "duration": 30}
                 else:
-                    reason = "QUANT PRO [30s]: Micro-Trend Continuation (Price < EMA_20). Signal = SELL (PUT, 30s Expiry)."
+                    reason = "QUANT PRO [30s]: Micro-Trend Flow (Price < EMA_20). Signal = SELL (PUT, 30s Expiry)."
                     logger.info(f"[{asset_name}] {reason}")
                     return {"signal": "put", "confidence": 88, "reason": reason, "duration": 30}
-            else:
-                reason = f"AI LOSS MEMORY: [{asset_name}] has {asset_recent_loss_count} recent loss(es). Disabling Rule 5 fallback and waiting for 90%+ Sureshot setup."
-                logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "doji", "confidence": 0, "reason": reason}
 
         # Calculate EMA 50
         df['EMA_50'] = df['close'].ewm(span=50, adjust=False).mean()
