@@ -1,7 +1,7 @@
 """
 rule_diagnostic.py — Forensic diagnostic script:
 1. Sub-rule win rate breakdown (Rule 1 CALL/PUT, Rule 2 CALL/PUT, Rule 3 CALL/PUT, Rule 4 CALL/PUT)
-2. Inverted signal test (flipping every signal CALL <-> PUT)
+2. Inverted signal test (flipping every signal CALL <-> PUT) with explicit tie breakdown.
 Run on both real_data_1m.csv and real_data_15m.csv without changing live strategy code.
 """
 
@@ -13,7 +13,7 @@ from metrics import breakeven_win_rate
 
 
 def sureshot_quant_pro_with_subrule_tag(df: pd.DataFrame):
-    """Identical to sureshot_quant_pro, but returns (signal, subrule_tag)."""
+    """Identical to sureshot_quant_pro in strategies.py, returning (signal, subrule_tag)."""
     if len(df) < 24:
         return None, None
 
@@ -76,6 +76,7 @@ def sureshot_quant_pro_with_subrule_tag(df: pd.DataFrame):
     is_gap_up = gap > gap_threshold
     is_gap_down = gap < -gap_threshold
 
+    # Skip flat entry candles
     if c_close == p_close:
         return None, None
 
@@ -123,11 +124,10 @@ def analyze_dataset(csv_filename: str, label: str):
     print("=" * 85)
 
     subrule_stats = {}
+    total_trades = 0
     normal_wins = 0
-    normal_trades = 0
-
     inverted_wins = 0
-    inverted_trades = 0
+    tied_expiries = 0
 
     for i in range(len(df)):
         expiry_i = i + 1
@@ -140,21 +140,20 @@ def analyze_dataset(csv_filename: str, label: str):
         if signal in ("call", "put"):
             entry_price = df.iloc[i]["close"]
             expiry_price = df.iloc[expiry_i]["close"]
+            total_trades += 1
 
             if expiry_price == entry_price:
+                # Exact price tie at expiry: both normal and inverted signals lose under binary rules
+                tied_expiries += 1
                 win_normal = False
                 win_inverted = False
             else:
                 win_normal = (expiry_price > entry_price) if signal == "call" else (expiry_price < entry_price)
-                # Inverted signal: call <-> put
                 inverted_signal = "put" if signal == "call" else "call"
                 win_inverted = (expiry_price > entry_price) if inverted_signal == "call" else (expiry_price < entry_price)
 
-            normal_trades += 1
             if win_normal:
                 normal_wins += 1
-
-            inverted_trades += 1
             if win_inverted:
                 inverted_wins += 1
 
@@ -179,14 +178,30 @@ def analyze_dataset(csv_filename: str, label: str):
 
     print("-" * 85)
 
-    # 2. Print Inverted Signal Diagnostic
-    overall_normal_wr = (normal_wins / normal_trades * 100) if normal_trades > 0 else 0.0
-    overall_inverted_wr = (inverted_wins / inverted_trades * 100) if inverted_trades > 0 else 0.0
+    # 2. Print Inverted Signal & Tie Math Diagnostic
+    overall_normal_wr = (normal_wins / total_trades * 100) if total_trades > 0 else 0.0
+    overall_inverted_wr = (inverted_wins / total_trades * 100) if total_trades > 0 else 0.0
+    tie_pct = (tied_expiries / total_trades * 100) if total_trades > 0 else 0.0
 
-    print(f"\n2. INVERTED SIGNAL DIAGNOSTIC (FLIPPING CALL <-> PUT):")
-    print(f"   Original Strategy Overall Win Rate: {overall_normal_wr:.2f}% ({normal_wins}/{normal_trades})")
-    print(f"   Inverted Signals Overall Win Rate: {overall_inverted_wr:.2f}% ({inverted_wins}/{inverted_trades})")
-    print(f"   Breakeven Win Rate Required:        {needed*100:.2f}%")
+    non_tied_trades = total_trades - tied_expiries
+    non_tied_normal_wr = (normal_wins / non_tied_trades * 100) if non_tied_trades > 0 else 0.0
+    non_tied_inverted_wr = (inverted_wins / non_tied_trades * 100) if non_tied_trades > 0 else 0.0
+
+    print(f"\n2. INVERTED SIGNAL DIAGNOSTIC & MATHEMATICAL PROOF:")
+    print(f"   Total Executed Trades:            {total_trades}")
+    print(f"   Tied Expiries (Both CALL/PUT Lose): {tied_expiries} ({tie_pct:.2f}% of trades)")
+    print(f"   Non-Tied Trades:                  {non_tied_trades} ({100 - tie_pct:.2f}% of trades)")
+    print("-" * 85)
+    print(f"   ALL TRADES (Including Ties):")
+    print(f"     Original Strategy Win Rate:     {overall_normal_wr:.2f}% ({normal_wins}/{total_trades})")
+    print(f"     Inverted Strategy Win Rate:     {overall_inverted_wr:.2f}% ({inverted_wins}/{total_trades})")
+    print(f"     Tie Expiry Loss Rate:           {tie_pct:.2f}% ({tied_expiries}/{total_trades})")
+    print(f"     SUM (Original + Inverted + Ties): {overall_normal_wr + overall_inverted_wr + tie_pct:.2f}% (PROVES 100% MATH INTEGRITY)")
+    print("-" * 85)
+    print(f"   EXCLUDING TIES (Pure Non-Flat Expiries):")
+    print(f"     Original Non-Tied Win Rate:     {non_tied_normal_wr:.2f}% ({normal_wins}/{non_tied_trades})")
+    print(f"     Inverted Non-Tied Win Rate:     {non_tied_inverted_wr:.2f}% ({inverted_wins}/{non_tied_trades})")
+    print(f"     SUM (Original + Inverted Non-Tied): {non_tied_normal_wr + non_tied_inverted_wr:.2f}% (EXACT 100% FLIP PROOF)")
     print("=" * 85 + "\n")
 
 
