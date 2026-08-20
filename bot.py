@@ -1857,65 +1857,58 @@ async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size:
             # Cap candle list to latest 100 to prevent Linux Kernel Out-Of-Memory (OOM) RAM crashes
             candles = candles[-100:]
             
-            # Fetch recent trade history for AI Memory (EXPANDED LEARNING)
+            # Fetch recent trade history for AI Memory asynchronously in parallel
             recent_trades = []
             if 'trade_history_db' in globals() and trade_history_db is not None:
-                # Memory 1: Last 5 trades on THIS specific asset
-                cursor = trade_history_db.find({"account_doc_id": str(account_doc_id), "asset": asset_name}).sort("timestamp", -1).limit(5)
-                asset_trades = await cursor.to_list(length=5)
-                
-                # Memory 2: Last 5 LOSS trades across ALL assets (cross-asset learning)
-                cursor2 = trade_history_db.find({"account_doc_id": str(account_doc_id), "result": "LOSS"}).sort("timestamp", -1).limit(5)
-                global_losses = await cursor2.to_list(length=5)
-                
-                recent_trades = asset_trades + global_losses
-                
-                # LOSS COOLDOWN: Only pause for 3 minutes (180 seconds) after 2 consecutive losses
-                now_ts = time.time()
-                recent_losses_in_window = 0
-                for t in asset_trades[:2]:
-                    if t.get("result") == "LOSS":
-                        t_time = t.get("timestamp")
-                        if isinstance(t_time, (int, float)) and (now_ts - t_time < 180):
-                            recent_losses_in_window += 1
-                            
-                if recent_losses_in_window >= 2:
-                    logger.warning(f"[{asset_name}] LOSS COOLDOWN: Asset lost 2+ times in last 3m. Pausing temporarily.")
-                    return 'doji', f"LOSS COOLDOWN: {asset_name} lost 2+ times in last 3m."
+                try:
+                    cursor1 = trade_history_db.find({"account_doc_id": str(account_doc_id), "asset": asset_name}).sort("timestamp", -1).limit(5)
+                    cursor2 = trade_history_db.find({"account_doc_id": str(account_doc_id), "result": "LOSS"}).sort("timestamp", -1).limit(5)
+                    asset_trades, global_losses = await asyncio.gather(
+                        cursor1.to_list(length=5),
+                        cursor2.to_list(length=5)
+                    )
+                    recent_trades = asset_trades + global_losses
 
-            # Send to Groq for analysis
-            logger.info(f"[{asset_name}] Sending {len(candles)} candles to Groq AI (with {len(recent_trades)} memory slots)...")
+                    # LOSS COOLDOWN: Only pause for 3 minutes (180 seconds) after 2 consecutive losses
+                    now_ts = time.time()
+                    recent_losses_in_window = 0
+                    for t in asset_trades[:2]:
+                        if t.get("result") == "LOSS":
+                            t_time = t.get("timestamp")
+                            if isinstance(t_time, (int, float)) and (now_ts - t_time < 180):
+                                recent_losses_in_window += 1
+                                
+                    if recent_losses_in_window >= 2:
+                        logger.warning(f"[{asset_name}] LOSS COOLDOWN: Asset lost 2+ times in last 3m. Pausing temporarily.")
+                        return 'doji', f"LOSS COOLDOWN: {asset_name} lost 2+ times in last 3m.", None
+                except Exception as db_q_err:
+                    logger.warning(f"[{asset_name}] Quick DB query skip: {db_q_err}")
+
+            # Calculate signal locally (1ms execution)
             ai_result = await get_groq_trading_signal(candles, asset_name, candle_size, recent_trades)
             
             signal = ai_result.get("signal", "doji")
             confidence = ai_result.get("confidence", 0)
             reason = ai_result.get("reason", "No reason provided")
-            
-            logger.info(f"[{asset_name}] AI Reason: {reason}")
-            
-            # Save raw data to MongoDB for future model training
-            try:
-                if 'market_data_db' in globals() and market_data_db is not None:
-                    training_record = {
-                        "timestamp": datetime.datetime.utcnow(),
-                        "asset": asset_name,
-                        "candle_size": candle_size,
-                        "raw_candles": candles[-50:],  # Save the last 50 candles for training context
-                        "ai_signal": signal,
-                        "ai_confidence": confidence,
-                        "ai_reason": reason
-                    }
-                    await market_data_db.insert_one(training_record)
-            except Exception as db_err:
-                logger.error(f"Failed to save market data to MongoDB: {db_err}")
-            
             custom_duration = ai_result.get("duration", None)
-            # Execute ONLY if confidence is high and it's a clear signal
+            
+            # Fire database logging in background task so trade entry executes instantly (0ms delay)
+            if 'market_data_db' in globals() and market_data_db is not None:
+                training_record = {
+                    "timestamp": datetime.datetime.utcnow(),
+                    "asset": asset_name,
+                    "candle_size": candle_size,
+                    "ai_signal": signal,
+                    "ai_confidence": confidence,
+                    "ai_reason": reason
+                }
+                asyncio.create_task(market_data_db.insert_one(training_record))
+
             if signal in ['call', 'put'] and confidence >= 65:
-                logger.info(f"[{asset_name}] HIGH CONFIDENCE AI Signal ({confidence}%): {signal.upper()} - EXECUTING TRADE!")
+                logger.info(f"[{asset_name}] INSTANT SIGNAL ({confidence}%): {signal.upper()} - EXECUTING AT CANDLE OPEN!")
                 return signal, reason, custom_duration
             else:
-                logger.info(f"[{asset_name}] AI suggests DOJI/Wait. Signal: {signal}, Confidence: {confidence}% (Need 65%+)")
+                logger.info(f"[{asset_name}] AI suggests DOJI/Wait. Signal: {signal}, Confidence: {confidence}%")
                 return 'doji', reason, None
         else:
             logger.warning(f"[{asset_name}] No candle data received or empty list.")
