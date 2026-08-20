@@ -2116,20 +2116,20 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
 
                  # 4c. Place the Trade
                  actual_duration = custom_dur if custom_dur is not None else 30  # 30-second trade expiry
-                 logger.info(f"[{asset_name_open}] Placing {direction.upper()} trade. Amount: {current_trade_amount}, Exp: {actual_duration}s, Mode: {trade_mode}")
+                 logger.info(f"[{asset_name_open}] Placing {direction.upper()} trade. Amount: {current_trade_amount}, Exp: {actual_duration}s, Mode: TIMER")
                  trade_placed_success = False
                  profit_or_loss_amount = 0
                  buy_error_reason = ""
                  try:
-                      status, buy_info = await qx_client.buy(current_trade_amount, asset_name_open, direction, actual_duration, trade_mode) # Pass 'TIMER' or 'TIME'
+                      # Strictly pass TIMER mode for exact 30s duration trade on Quotex
+                      status, buy_info = await qx_client.buy(current_trade_amount, asset_name_open, direction, actual_duration, "TIMER")
 
                       if status:
                            trade_id = buy_info.get('id', 'N/A')
-                           logger.info(f"[{asset_name_open}] Trade placed successfully! ID: {trade_id}. Waiting for result...")
+                           logger.info(f"[{asset_name_open}] Trade placed successfully! ID: {trade_id}. Waiting {actual_duration + 1.5}s for settlement...")
 
-                           # Wait for full trade expiry + broker settlement delay (minimum 7 seconds)
-                           wait_delay = max(7, actual_duration + 2)
-                           await asyncio.sleep(wait_delay)
+                           # Wait precisely for trade expiry + 1.5s broker settlement
+                           await asyncio.sleep(actual_duration + 1.5)
 
                            logger.info(f"[{asset_name_open}] Checking result for Trade ID: {trade_id}...")
                            # Wrap in timeout to prevent infinite hangs & include retry verification
