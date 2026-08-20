@@ -1902,7 +1902,12 @@ async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size:
                     "ai_confidence": confidence,
                     "ai_reason": reason
                 }
-                asyncio.create_task(market_data_db.insert_one(training_record))
+                async def _save_record(rec):
+                    try:
+                        await market_data_db.insert_one(rec)
+                    except Exception:
+                        pass
+                asyncio.create_task(_save_record(training_record))
 
             if signal in ['call', 'put'] and confidence >= 65:
                 logger.info(f"[{asset_name}] INSTANT SIGNAL ({confidence}%): {signal.upper()} - EXECUTING AT CANDLE OPEN!")
@@ -1921,7 +1926,7 @@ async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size:
             global active_quotex_clients
             if account_doc_id in active_quotex_clients:
                 del active_quotex_clients[account_doc_id]
-        return None, ""
+        return None, "", None
 
 async def _check_asset_open_and_get_name(qx_client: Quotex, asset_name_original: str) -> Optional[str]:
     """Checks if asset or its OTC variant is open, returns the name of the open asset or None."""
