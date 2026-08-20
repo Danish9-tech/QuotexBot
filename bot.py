@@ -1844,7 +1844,14 @@ async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size:
         # Fetch 50 candles worth of seconds for 5s trades (250s) to prevent WebSocket batch timeouts
         num_candles_needed = 50 if candle_size <= 5 else 60
         amount_of_seconds = num_candles_needed * candle_size 
-        candles = await qx_client.get_historical_candles(asset_name, amount_of_seconds, candle_size) 
+        try:
+            candles = await asyncio.wait_for(
+                qx_client.get_historical_candles(asset_name, amount_of_seconds, candle_size),
+                timeout=3.0
+            )
+        except asyncio.TimeoutError:
+            logger.warning(f"[{asset_name}] Candle fetch timed out (3.0s limit). Skipping immediately to next asset.")
+            return None, "TIMEOUT", None 
 
         if candles and isinstance(candles, list) and len(candles) > 0:
             # Cap candle list to latest 100 to prevent Linux Kernel Out-Of-Memory (OOM) RAM crashes
@@ -1926,25 +1933,29 @@ async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size:
 async def _check_asset_open_and_get_name(qx_client: Quotex, asset_name_original: str) -> Optional[str]:
     """Checks if asset or its OTC variant is open, returns the name of the open asset or None."""
     try:
-        # Check original asset first
-        checked_name, data = await qx_client.get_available_asset(asset_name_original, force_open=False)
-        if checked_name and data and data[2]:
-            logger.info(f"[{asset_name_original}] Asset is open.")
-            return checked_name # Return the name API confirmed (might be same or slightly different case)
+        # Check original asset first with 2.0s timeout
+        try:
+            checked_name, data = await asyncio.wait_for(qx_client.get_available_asset(asset_name_original, force_open=False), timeout=2.0)
+            if checked_name and data and data[2]:
+                logger.info(f"[{asset_name_original}] Asset is open.")
+                return checked_name
+        except asyncio.TimeoutError:
+            pass
 
         # If original closed and not already OTC, try OTC
         if not asset_name_original.endswith("_otc"):
             otc_asset = asset_name_original + "_otc"
             logger.info(f"[{asset_name_original}] Closed. Trying {otc_asset}...")
-            checked_name_otc, data_otc = await qx_client.get_available_asset(otc_asset, force_open=True) # Force open check for OTC
-            if checked_name_otc and data_otc:
-                logger.info(f"[{otc_asset}] Asset is open (OTC).")
-                return checked_name_otc
-            else:
-                logger.warning(f"[{asset_name_original}/{otc_asset}] Both closed or unavailable.")
-                return None
+            try:
+                checked_name_otc, data_otc = await asyncio.wait_for(qx_client.get_available_asset(otc_asset, force_open=True), timeout=2.0)
+                if checked_name_otc and data_otc:
+                    logger.info(f"[{otc_asset}] Asset is open (OTC).")
+                    return checked_name_otc
+            except asyncio.TimeoutError:
+                pass
+            logger.warning(f"[{asset_name_original}/{otc_asset}] Both closed or unavailable.")
+            return None
         else:
-            # Original was OTC and it's closed
             logger.warning(f"[{asset_name_original}] Asset (OTC) is closed or unavailable.")
             return None
 
@@ -2095,12 +2106,12 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                  # 4b. Get Trading Direction
                  direction, ai_reason, custom_dur = await _get_candle_direction(qx_client, asset_name_open, candle_size, account_doc_id)
                  if direction is None:
-                      logger.warning(f"[{asset_name_open}] Skipping: Could not determine trade direction.")
-                      await asyncio.sleep(5)
+                      logger.warning(f"[{asset_name_open}] Skipping: Could not determine trade direction or fetch candles. Instantly moving to next asset.")
+                      await asyncio.sleep(0.5)
                       continue
                  if direction == 'doji':
-                      logger.info(f"[{asset_name_open}] Skipping: Last candle was Doji.")
-                      await asyncio.sleep(5)
+                      logger.info(f"[{asset_name_open}] Skipping: Strategy suggests waiting (Doji). Instantly moving to next asset.")
+                      await asyncio.sleep(0.5)
                       continue
                  logger.info(f"[{asset_name_open}] Trade Direction Signal: {direction.upper()}")
 
