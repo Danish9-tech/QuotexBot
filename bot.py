@@ -1979,17 +1979,14 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
             # Use account_doc_id passed to the function
             settings = await get_or_create_trade_settings(account_doc_id)
             if not settings:
-                logger.error(f"[Trading Task {account_doc_id}]: Failed to get trade settings. Stopping loop.")
-                break # Stop if settings can't be retrieved
+                logger.error(f"[Trading Task {account_doc_id}]: Failed to get trade settings. Retrying in 5s...")
+                await asyncio.sleep(5)
+                continue
 
-            if not settings.get("service_status", False) and not is_first_run:
-                logger.info(f"[Trading Task {account_doc_id}]: Service status is OFF in DB. Stopping loop.")
-                # Ensure the task is actually removed from the global dict by calling stop_trading_task
-                # Need to schedule this outside the loop's context or handle it carefully
-                # The most reliable way is if the trigger (button press) calls stop_trading_task itself.
-                # Here, we just break the loop.
-                await stop_trading_task(account_doc_id) # Attempt cleanup
-                break
+            if not settings.get("service_status", True) and not is_first_run:
+                logger.info(f"[Trading Task {account_doc_id}]: Service status is explicitly turned OFF in DB. Retrying check in 10s...")
+                await asyncio.sleep(10)
+                continue
 
             is_first_run = False # Service status checked at least once
 
@@ -2258,33 +2255,28 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                          logger.info(f"[{asset_name_open}] {trade_mode} mode: Waiting {wait_seconds:.2f}s for next candle/minute.")
                          await asyncio.sleep(wait_seconds)
 
-                 # Small delay before processing next asset to avoid overwhelming API/system
-                 await asyncio.sleep(5)
+                 # Small delay before processing next asset
+                 await asyncio.sleep(1)
 
             # --- End of Asset Loop ---
-            logger.debug(f"[Trading Task {account_doc_id}]: Finished asset processing cycle.")
-
-            # Wait a bit before starting the *next full cycle* unless in cooldown
-            if time.time() >= active_cooldown_until:
-                 await asyncio.sleep(60) # Wait 60 seconds before next check to save tokens
+            logger.debug(f"[Trading Task {account_doc_id}]: Finished asset processing cycle. Scanning next cycle immediately...")
+            await asyncio.sleep(2) # 2s delay between cycles for continuous 24/7 scanning
 
         except asyncio.CancelledError:
              logger.info(f"[Trading Task {account_doc_id}]: Loop cancelled.")
              try:
-                 await disconnect_quotex_client(account_doc_id) # Clean up connection
-             except Exception as cleanup_error:
-                 logger.error(f"[Trading Task {account_doc_id}]: Error during cleanup: {cleanup_error}", exc_info=True)
-             break # Exit the while loop
-        except ConnectionError as ce: # Catch connection errors from get_quotex_client or within loop
-             logger.error(f"[Trading Task {account_doc_id}]: ConnectionError encountered: {ce}. Pausing for 60s.")
-             await disconnect_quotex_client(account_doc_id) # Ensure cleanup on error
-             await asyncio.sleep(60)
+                 await disconnect_quotex_client(account_doc_id)
+             except Exception:
+                 pass
+             break # Exit loop only on explicit user cancellation
+        except ConnectionError as ce:
+             logger.error(f"[Trading Task {account_doc_id}]: ConnectionError: {ce}. Reconnecting in 3s...")
+             await disconnect_quotex_client(account_doc_id)
+             await asyncio.sleep(3)
         except Exception as e:
-             # Catch unexpected errors in the main loop logic
-             logger.error(f"[Trading Task {account_doc_id}]: Unexpected error in trading loop: {e}", exc_info=True)
-             await disconnect_quotex_client(account_doc_id) # Ensure cleanup on error
-             logger.info(f"[Trading Task {account_doc_id}]: Pausing for 60s due to error.")
-             await asyncio.sleep(60) # Wait after unexpected error
+             logger.error(f"[Trading Task {account_doc_id}]: Exception in trading loop: {e}. Auto-reconnecting in 3s...", exc_info=True)
+             await disconnect_quotex_client(account_doc_id)
+             await asyncio.sleep(3)
 
     logger.info(f"[Trading Task {account_doc_id}]: Exiting trading loop function.")
     # Final check: ensure client is disconnected if loop terminates unexpectedly
