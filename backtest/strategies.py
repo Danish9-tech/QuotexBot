@@ -153,6 +153,10 @@ def sureshot_quant_pro(df: pd.DataFrame) -> str | None:
     is_gap_up = gap > gap_threshold
     is_gap_down = gap < -gap_threshold
 
+    # Skip flat/tied price candles (price unchanged from previous candle)
+    if c_close == p_close:
+        return None
+
     # --- Sureshot Pro Quant Rules ---
     # Rule 1: Triple Extreme Confluence Reversal
     if (is_touching_dc_lower or rsi_14 <= 35) and stoch_k <= 20:
@@ -178,8 +182,6 @@ def sureshot_quant_pro(df: pd.DataFrame) -> str | None:
     elif is_downtrend and (p2_close < p2_open) and (p_close < p_open) and (c_close < c_open):
         return "put"
 
-    # Rule 5: Micro-Trend Flow
-    elif is_uptrend or (c_close >= c_open):
-        return "call"
+    # Default: Return None when no clear quantitative setup is present
     else:
-        return "put"
+        return None
