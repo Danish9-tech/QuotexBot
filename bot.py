@@ -2112,21 +2112,22 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
 
 
                  # 4c. Place the Trade
-                 actual_duration = custom_dur if custom_dur is not None else 30  # 30-second trade expiry
+                 actual_duration = custom_dur if (custom_dur is not None and custom_dur > 0) else (DEFAULT_TRADE_DURATION if DEFAULT_TRADE_DURATION > 0 else 5)
                  logger.info(f"[{asset_name_open}] Placing {direction.upper()} trade. Amount: {current_trade_amount}, Exp: {actual_duration}s, Mode: TIMER")
                  trade_placed_success = False
                  profit_or_loss_amount = 0
                  buy_error_reason = ""
                  try:
-                      # Strictly pass TIMER mode for exact 30s duration trade on Quotex
+                      # Strictly pass TIMER mode for exact turbo duration trade on Quotex
                       status, buy_info = await qx_client.buy(current_trade_amount, asset_name_open, direction, actual_duration, "TIMER")
 
                       if status:
                            trade_id = buy_info.get('id', 'N/A')
-                           logger.info(f"[{asset_name_open}] Trade placed successfully! ID: {trade_id}. Waiting {actual_duration + 1.5}s for settlement...")
+                           settle_wait = actual_duration + 1.0
+                           logger.info(f"[{asset_name_open}] Trade placed successfully! ID: {trade_id}. Waiting {settle_wait}s for settlement...")
 
-                           # Wait precisely for trade expiry + 1.5s broker settlement
-                           await asyncio.sleep(actual_duration + 1.5)
+                           # Wait precisely for trade expiry + 1.0s broker settlement
+                           await asyncio.sleep(settle_wait)
 
                            logger.info(f"[{asset_name_open}] Checking result for Trade ID: {trade_id}...")
                            # Wrap in timeout to prevent infinite hangs & include retry verification
