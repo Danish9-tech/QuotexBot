@@ -507,9 +507,10 @@ async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type:
     is_patched = False
 
     try:
-        # Multi-host fallback list to bypass Cloudflare / HTTP 429 rate limiting
-        env_host = os.getenv("QUOTEX_HOST", "qxbroker.com")
-        host_candidates = [env_host] + [h for h in ["qxbroker.com", "market-qx.trade", "quotex.io", "qxbroker.io"] if h != env_host]
+        # Multi-host fallback list to bypass Cloudflare / HTTP 429 rate limiting on DigitalOcean
+        env_host = os.getenv("QUOTEX_HOST", "market-qx.trade")
+        default_order = ["market-qx.trade", "qxbroker.com", "quotex.io"]
+        host_candidates = [env_host] + [h for h in default_order if h != env_host]
 
         for host_attempt in host_candidates:
             logger.info(f"Creating new Quotex client instance for {email} on host: {host_attempt}")
@@ -545,12 +546,12 @@ async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type:
                 break
             else:
                 reason_str = str(connection_reason).lower()
-                if "429" in reason_str or "rejected" in reason_str or "closed" in reason_str:
-                    logger.warning(f"Host {host_attempt} rejected connection (HTTP 429 / Rate Limit). Trying next domain...")
+                if "429" in reason_str or "403" in reason_str or "rejected" in reason_str or "closed" in reason_str:
+                    logger.warning(f"Host {host_attempt} rejected connection ({connection_reason}). Trying next domain in 3s...")
                     if qx_client:
                         try: await qx_client.close()
                         except: pass
-                    await asyncio.sleep(2.0)
+                    await asyncio.sleep(3.0)
                     continue
                 else:
                     # Non-rate-limit error (e.g. invalid credentials or PIN expected), break and process below
