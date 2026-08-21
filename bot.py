@@ -507,42 +507,59 @@ async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type:
     is_patched = False
 
     try:
-        # Create instance without the broken patch
-        logger.info(f"Creating new Quotex client instance for {email}")
-        quotex_host = os.getenv("QUOTEX_HOST", "quotex.io")
-        
-        # Bind the native async callback for 2FA PIN directly in the constructor
-        qx_client = Quotex(
-            email=email, 
-            password=password, 
-            host=quotex_host,
-            on_otp_callback=handle_potential_pin_input
-        )
+        # Multi-host fallback list to bypass Cloudflare / HTTP 429 rate limiting
+        env_host = os.getenv("QUOTEX_HOST", "qxbroker.com")
+        host_candidates = [env_host] + [h for h in ["qxbroker.com", "market-qx.trade", "quotex.io", "qxbroker.io"] if h != env_host]
 
-        # Add context *before* connect call
-        logger.info(f"Adding user {user_id} to active_otp_requests BEFORE connect.")
-        if not bot_instance: raise ConnectionAbortedError("Bot instance not available for OTP context.")
-        active_otp_requests[user_id] = {'qx_client': qx_client, 'doc_id': account_doc_id}
-
-        # Call connect directly on main event loop
-        logger.info(f"Attempting connection for {email}...")
-
-        try:
-            connection_check, connection_reason = await asyncio.wait_for(
-                qx_client.connect(),
-                timeout=180.0
+        for host_attempt in host_candidates:
+            logger.info(f"Creating new Quotex client instance for {email} on host: {host_attempt}")
+            qx_client = Quotex(
+                email=email, 
+                password=password, 
+                host=host_attempt,
+                on_otp_callback=handle_potential_pin_input
             )
-        except asyncio.TimeoutError:
-            logger.error("Connection attempt timed out.")
-            connection_check, connection_reason = False, "Timeout during connection"
-        except Exception as e:
-            logger.error(f"Error during connection: {e}", exc_info=True)
-            connection_check, connection_reason = False, str(e)
-            
+
+            # Add context *before* connect call
+            logger.info(f"Adding user {user_id} to active_otp_requests BEFORE connect.")
+            if not bot_instance: raise ConnectionAbortedError("Bot instance not available for OTP context.")
+            active_otp_requests[user_id] = {'qx_client': qx_client, 'doc_id': account_doc_id}
+
+            # Call connect directly on main event loop
+            logger.info(f"Attempting connection for {email} via {host_attempt}...")
+
+            try:
+                connection_check, connection_reason = await asyncio.wait_for(
+                    qx_client.connect(),
+                    timeout=120.0
+                )
+            except asyncio.TimeoutError:
+                logger.error(f"Connection attempt to {host_attempt} timed out.")
+                connection_check, connection_reason = False, f"Timeout during connection on {host_attempt}"
+            except Exception as e:
+                logger.error(f"Error during connection to {host_attempt}: {e}", exc_info=True)
+                connection_check, connection_reason = False, str(e)
+                
+            if connection_check:
+                logger.info(f"Successfully connected to Quotex via host: {host_attempt}")
+                break
+            else:
+                reason_str = str(connection_reason).lower()
+                if "429" in reason_str or "rejected" in reason_str or "closed" in reason_str:
+                    logger.warning(f"Host {host_attempt} rejected connection (HTTP 429 / Rate Limit). Trying next domain...")
+                    if qx_client:
+                        try: await qx_client.close()
+                        except: pass
+                    await asyncio.sleep(2.0)
+                    continue
+                else:
+                    # Non-rate-limit error (e.g. invalid credentials or PIN expected), break and process below
+                    break
+
         # Deactivate patch state immediately after
         patch_state['expecting_pin'] = False
         logger.info("Patch state set to NOT expect PIN.")
-        logger.info(f"Connect() call finished (aggressive patch active).")
+        logger.info(f"Connect() call finished.")
         logger.info(f"Connection attempt finished. Result Check: {connection_check}, Reason: '{connection_reason}'")
 
         # --- Handle connection results ---
