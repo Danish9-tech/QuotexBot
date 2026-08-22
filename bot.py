@@ -1937,8 +1937,8 @@ async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size:
                         pass
                 asyncio.create_task(_save_record(training_record))
 
-            if signal in ['call', 'put'] and confidence >= 65:
-                logger.info(f"[{asset_name}] INSTANT SIGNAL ({confidence}%): {signal.upper()} - EXECUTING AT CANDLE OPEN!")
+            if signal in ['call', 'put'] and confidence >= 90:
+                logger.info(f"[{asset_name}] HIGH-CONVICTION INSTANT SIGNAL ({confidence}%): {signal.upper()} - EXECUTING AT CANDLE OPEN!")
                 return signal, reason, custom_duration
             else:
                 logger.info(f"[{asset_name}] AI suggests DOJI/Wait. Signal: {signal}, Confidence: {confidence}%")
