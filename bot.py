@@ -113,9 +113,9 @@ active_otp_requests: Dict[int, Dict[str, Any]] = {}
 user_states: Dict[int, str] = {} # e.g., {user_id: "waiting_broadcast_message"}
 
 DEFAULT_TRADE_AMOUNT = 5
-DEFAULT_TRADE_DURATION = 5 # 5-second turbo trades by default (can be set per asset)
+DEFAULT_TRADE_DURATION = 10 # 10-second turbo trades by default
 DEFAULT_TRADE_MODE = "TIMER" # 'TIMER' or 'TIME'
-DEFAULT_CANDLE_SIZE = 5 # 5-second candles for 5S Sureshot strategy
+DEFAULT_CANDLE_SIZE = 10 # 10-second candles for Sureshot strategy
 DEFAULT_SERVICE_STATUS = False # Trading Off by default
 
 MARTINGALE_MULTIPLIER = 2.0
@@ -2021,7 +2021,7 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
             # Extract settings needed
             assets_to_trade = settings.get("assets", [])
             trade_mode = settings.get("trade_mode", DEFAULT_TRADE_MODE) # 'TIME' or 'TIMER'
-            candle_size = 5 # Force 5-second candle timeframe for 5S Sureshot strategy
+            candle_size = 10 # 10-second candle timeframe for Sureshot strategy
             martingale_state_db = settings.get("martingale_state", {})
             cooldown_until_db = settings.get("cooldown_until", 0.0)
 
@@ -2140,7 +2140,7 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
 
 
                  # 4c. Place the Trade
-                 actual_duration = custom_dur if (custom_dur is not None and custom_dur > 0) else (DEFAULT_TRADE_DURATION if DEFAULT_TRADE_DURATION > 0 else 5)
+                 actual_duration = custom_dur if (custom_dur is not None and custom_dur > 0) else (DEFAULT_TRADE_DURATION if DEFAULT_TRADE_DURATION > 0 else 10)
                  logger.info(f"[{asset_name_open}] Placing {direction.upper()} trade. Amount: {current_trade_amount}, Exp: {actual_duration}s, Mode: TIMER")
                  trade_placed_success = False
                  profit_or_loss_amount = 0
