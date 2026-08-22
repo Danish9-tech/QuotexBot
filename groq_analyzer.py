@@ -149,22 +149,33 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
             asset_recent_loss_count = 0
             last_loss_direction = None
             last_loss_rule = ""
+            now_ts = time.time()
 
             if recent_trades:
                 for t in recent_trades:
                     if t.get('asset') == asset_name and (t.get('result') == 'LOSS' or t.get('profit_loss', 0) < 0):
-                        asset_recent_loss_count += 1
-                        r_str = str(t.get('ai_reason', '') or t.get('reason', ''))
-                        recent_loss_reasons.append(r_str)
-                        if last_loss_direction is None:
-                            # Detect which direction failed on the latest loss
-                            if "BUY" in r_str or "CALL" in r_str or t.get('direction') == 'call':
-                                last_loss_direction = "call"
-                            elif "SELL" in r_str or "PUT" in r_str or t.get('direction') == 'put':
-                                last_loss_direction = "put"
-                            last_loss_rule = r_str
+                        # ONLY count loss if it occurred within the last 3 minutes (180 seconds)
+                        t_time = t.get('timestamp')
+                        is_recent = False
+                        if isinstance(t_time, (int, float)):
+                            if (now_ts - t_time) < 180:
+                                is_recent = True
+                        elif hasattr(t_time, 'timestamp'):
+                            if (now_ts - t_time.timestamp()) < 180:
+                                is_recent = True
+                        
+                        if is_recent:
+                            asset_recent_loss_count += 1
+                            r_str = str(t.get('ai_reason', '') or t.get('reason', ''))
+                            recent_loss_reasons.append(r_str)
+                            if last_loss_direction is None:
+                                if "BUY" in r_str or "CALL" in r_str or t.get('direction') == 'call':
+                                    last_loss_direction = "call"
+                                elif "SELL" in r_str or "PUT" in r_str or t.get('direction') == 'put':
+                                    last_loss_direction = "put"
+                                last_loss_rule = r_str
 
-            logger.info(f"[{asset_name}] AI Loss Memory: Recent Losses={asset_recent_loss_count}, Last Loss Direction={last_loss_direction}")
+            logger.info(f"[{asset_name}] AI Loss Memory (Last 3m): Recent Losses={asset_recent_loss_count}, Last Loss Direction={last_loss_direction}")
 
             # Calculate Stochastic Oscillator (5, 3, 3)
             low_5 = df['low'].rolling(window=min(5, len(df))).min()
@@ -247,9 +258,25 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                     logger.info(f"[{asset_name}] {reason}")
                     return {"signal": "put", "confidence": 85, "reason": reason, "duration": 5}
 
+            # Rule 5: ADAPTIVE MICRO-CANDLE FLOW (80% Sureshot)
+            elif c_close > c_open:
+                if last_loss_direction == "call" and asset_recent_loss_count >= 2:
+                    logger.warning(f"[{asset_name}] AI Loss Shield: Skipping CALL micro-flow due to 2+ consecutive CALL losses.")
+                else:
+                    reason = "QUANT PRO [5s]: Micro-Candle Bullish Flow (Close > Open). Signal = BUY (CALL, 5s Expiry)."
+                    logger.info(f"[{asset_name}] {reason}")
+                    return {"signal": "call", "confidence": 80, "reason": reason, "duration": 5}
+            elif c_close < c_open:
+                if last_loss_direction == "put" and asset_recent_loss_count >= 2:
+                    logger.warning(f"[{asset_name}] AI Loss Shield: Skipping PUT micro-flow due to 2+ consecutive PUT losses.")
+                else:
+                    reason = "QUANT PRO [5s]: Micro-Candle Bearish Flow (Close < Open). Signal = SELL (PUT, 5s Expiry)."
+                    logger.info(f"[{asset_name}] {reason}")
+                    return {"signal": "put", "confidence": 80, "reason": reason, "duration": 5}
+
             else:
-                logger.info(f"[{asset_name}] Skipping 5s trade: No setup aligned.")
-                return {"signal": "doji", "confidence": 0, "reason": "No setup aligned"}
+                logger.info(f"[{asset_name}] Skipping 5s trade: Absolute flat candle.")
+                return {"signal": "doji", "confidence": 0, "reason": "Absolute flat candle"}
 
         # Calculate EMA 50
         df['EMA_50'] = df['close'].ewm(span=50, adjust=False).mean()
