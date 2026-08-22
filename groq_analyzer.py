@@ -67,11 +67,11 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
         df = pd.DataFrame(normalized_candles)
         
         # =========================================================================
-        # 5-SECOND OTC SURESHOT PRO COMBO (GAP, REJECTION, ENGULFING & TREND)
+        # TURBO QUANT OTC SURESHOT COMBO (GAP, REJECTION, ENGULFING & TREND)
         # =========================================================================
-        if candle_size <= 5:
+        if candle_size <= 30:
             if len(df) < 10:
-                return {"signal": "doji", "confidence": 0, "reason": "Not enough 5s candles for trend & pattern analysis"}
+                return {"signal": "doji", "confidence": 0, "reason": "Not enough candles for trend & pattern analysis"}
                 
             # Calculate 20-period EMA, 100-period EMA & RSI 14 for Institutional Anti-Broker Analysis
             df['EMA_20'] = df['close'].ewm(span=20, adjust=False).mean()
