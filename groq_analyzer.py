@@ -260,24 +260,31 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                     return {"signal": "put", "confidence": 85, "reason": reason, "duration": 5}
 
             # Rule 5: ADAPTIVE MICRO-CANDLE FLOW (80% Sureshot)
-            elif c_close > c_open:
+            # Evaluates current candle body or previous closed 5s candle if current candle just opened (c_close == c_open)
+            elif c_close > c_open or (c_close == c_open and p_close > p_open):
                 if last_loss_direction == "call" and asset_recent_loss_count >= 2:
                     logger.warning(f"[{asset_name}] AI Loss Shield: Skipping CALL micro-flow due to 2+ consecutive CALL losses.")
                 else:
-                    reason = "QUANT PRO [5s]: Micro-Candle Bullish Flow (Close > Open). Signal = BUY (CALL, 5s Expiry)."
+                    reason = "QUANT PRO [5s]: Micro-Candle Bullish Flow (Prev 5s Green). Signal = BUY (CALL, 5s Expiry)."
                     logger.info(f"[{asset_name}] {reason}")
                     return {"signal": "call", "confidence": 80, "reason": reason, "duration": 5}
-            elif c_close < c_open:
+            elif c_close < c_open or (c_close == c_open and p_close < p_open):
                 if last_loss_direction == "put" and asset_recent_loss_count >= 2:
                     logger.warning(f"[{asset_name}] AI Loss Shield: Skipping PUT micro-flow due to 2+ consecutive PUT losses.")
                 else:
-                    reason = "QUANT PRO [5s]: Micro-Candle Bearish Flow (Close < Open). Signal = SELL (PUT, 5s Expiry)."
+                    reason = "QUANT PRO [5s]: Micro-Candle Bearish Flow (Prev 5s Red). Signal = SELL (PUT, 5s Expiry)."
                     logger.info(f"[{asset_name}] {reason}")
                     return {"signal": "put", "confidence": 80, "reason": reason, "duration": 5}
-
             else:
-                logger.info(f"[{asset_name}] Skipping 5s trade: Absolute flat candle.")
-                return {"signal": "doji", "confidence": 0, "reason": "Absolute flat candle"}
+                # Fallback: align with overall 20-period EMA trend
+                if is_uptrend:
+                    reason = "QUANT PRO [5s]: Trend Continuity Flow (Price >= EMA20). Signal = BUY (CALL, 5s Expiry)."
+                    logger.info(f"[{asset_name}] {reason}")
+                    return {"signal": "call", "confidence": 80, "reason": reason, "duration": 5}
+                else:
+                    reason = "QUANT PRO [5s]: Trend Continuity Flow (Price < EMA20). Signal = SELL (PUT, 5s Expiry)."
+                    logger.info(f"[{asset_name}] {reason}")
+                    return {"signal": "put", "confidence": 80, "reason": reason, "duration": 5}
 
         # Calculate EMA 50
         df['EMA_50'] = df['close'].ewm(span=50, adjust=False).mean()
