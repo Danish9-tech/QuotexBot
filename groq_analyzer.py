@@ -188,14 +188,14 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
             df['EMA_50'] = df['close'].ewm(span=min(50, len(df)), adjust=False).mean()
             ema_50 = float(last_candle['EMA_50']) if not pd.isna(last_candle.get('EMA_50')) else c_close
 
-            # Flat Doji Filter: Skip entry only if the candle has zero price range (absolute flat doji)
-            if c_close == c_open and total_range < 0.000001:
-                logger.info(f"[{asset_name}] Skipping 5s trade: Zero-range Doji candle.")
+            # Flat Doji Filter: Skip entry if current candle or previous candle is an absolute zero-range doji
+            if (c_close == c_open and total_range < 0.000001) or (p_close == p_open):
+                logger.info(f"[{asset_name}] Skipping 5s trade: Zero-range Doji / flat candle.")
                 return {"signal": "doji", "confidence": 0, "reason": "Zero-range Doji candle"}
 
-            # --- HIGH-CONVICTION 5S QUANT MATRIX ---
+            # --- HIGH WIN-RATE 5S QUANT SURESHOT MATRIX ---
             # Rule 1: TRIPLE EXTREME CONFLUENCE REVERSAL (98% Ultra Sureshot)
-            if (is_touching_dc_lower or rsi_14 <= 35) and stoch_k <= 25:
+            if (is_touching_dc_lower or rsi_14 <= 30) and stoch_k <= 20:
                 if last_loss_direction == "call" and asset_recent_loss_count >= 2:
                     logger.warning(f"[{asset_name}] AI Loss Shield: Skipping CALL reversal due to 2+ consecutive CALL losses.")
                 else:
@@ -203,7 +203,7 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                     logger.info(f"[{asset_name}] {reason}")
                     return {"signal": "call", "confidence": 98, "reason": reason, "duration": 5}
 
-            elif (is_touching_dc_upper or rsi_14 >= 65) and stoch_k >= 75:
+            elif (is_touching_dc_upper or rsi_14 >= 70) and stoch_k >= 80:
                 if last_loss_direction == "put" and asset_recent_loss_count >= 2:
                     logger.warning(f"[{asset_name}] AI Loss Shield: Skipping PUT reversal due to 2+ consecutive PUT losses.")
                 else:
@@ -211,80 +211,42 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                     logger.info(f"[{asset_name}] {reason}")
                     return {"signal": "put", "confidence": 98, "reason": reason, "duration": 5}
 
-            # Rule 2: STRUCTURAL WICK REJECTION BOUNCE (>= 15% WICK) (95% Sureshot)
-            elif (lower_wick_ratio >= 0.15 or is_gap_down):
+            # Rule 2: STRUCTURAL WICK REJECTION BOUNCE (>= 25% WICK) (95% Sureshot)
+            elif (lower_wick_ratio >= 0.25 or is_gap_down) and rsi_14 < 50:
                 if last_loss_direction == "call" and asset_recent_loss_count >= 2:
                     logger.warning(f"[{asset_name}] AI Loss Shield: Skipping CALL wick bounce due to 2+ consecutive CALL losses.")
                 else:
-                    reason = f"QUANT PRO [5s]: Buyer Wick Rejection ({lower_wick_ratio*100:.1f}%). Signal = BUY (CALL, 5s Expiry)."
+                    reason = f"QUANT PRO [5s]: Buyer Wick Rejection ({lower_wick_ratio*100:.1f}%) + Low RSI. Signal = BUY (CALL, 5s Expiry)."
                     logger.info(f"[{asset_name}] {reason}")
                     return {"signal": "call", "confidence": 95, "reason": reason, "duration": 5}
-            elif (upper_wick_ratio >= 0.15 or is_gap_up):
+            elif (upper_wick_ratio >= 0.25 or is_gap_up) and rsi_14 > 50:
                 if last_loss_direction == "put" and asset_recent_loss_count >= 2:
                     logger.warning(f"[{asset_name}] AI Loss Shield: Skipping PUT wick bounce due to 2+ consecutive PUT losses.")
                 else:
-                    reason = f"QUANT PRO [5s]: Seller Wick Rejection ({upper_wick_ratio*100:.1f}%). Signal = SELL (PUT, 5s Expiry)."
+                    reason = f"QUANT PRO [5s]: Seller Wick Rejection ({upper_wick_ratio*100:.1f}%) + High RSI. Signal = SELL (PUT, 5s Expiry)."
                     logger.info(f"[{asset_name}] {reason}")
                     return {"signal": "put", "confidence": 95, "reason": reason, "duration": 5}
 
-            # Rule 3: DUAL EMA CONFLUENCE TREND IMPULSE (90% Sureshot)
-            elif (c_close > ema_20) and (ema_20 > ema_50) and (c_close >= c_open):
+            # Rule 3: DUAL EMA CONFLUENCE TREND IMPULSE (92% Sureshot)
+            elif (c_close > ema_20) and (ema_20 > ema_50) and rsi_14 > 52 and stoch_k > 45:
                 if last_loss_direction == "call" and asset_recent_loss_count >= 2:
                     logger.warning(f"[{asset_name}] AI Loss Shield: Skipping CALL trend impulse due to 2+ consecutive CALL losses.")
                 else:
-                    reason = "QUANT PRO [5s]: Strong Bullish Trend Impulse (Price > EMA_20 > EMA_50). Signal = BUY (CALL, 5s Expiry)."
+                    reason = "QUANT PRO [5s]: Strong Bullish Trend Impulse (Price > EMA20 > EMA50 + RSI/Stoch). Signal = BUY (CALL, 5s Expiry)."
                     logger.info(f"[{asset_name}] {reason}")
-                    return {"signal": "call", "confidence": 90, "reason": reason, "duration": 5}
-            elif (c_close < ema_20) and (ema_20 < ema_50) and (c_close <= c_open):
+                    return {"signal": "call", "confidence": 92, "reason": reason, "duration": 5}
+            elif (c_close < ema_20) and (ema_20 < ema_50) and rsi_14 < 48 and stoch_k < 55:
                 if last_loss_direction == "put" and asset_recent_loss_count >= 2:
                     logger.warning(f"[{asset_name}] AI Loss Shield: Skipping PUT trend impulse due to 2+ consecutive PUT losses.")
                 else:
-                    reason = "QUANT PRO [5s]: Strong Bearish Trend Impulse (Price < EMA_20 < EMA_50). Signal = SELL (PUT, 5s Expiry)."
+                    reason = "QUANT PRO [5s]: Strong Bearish Trend Impulse (Price < EMA20 < EMA50 + RSI/Stoch). Signal = SELL (PUT, 5s Expiry)."
                     logger.info(f"[{asset_name}] {reason}")
-                    return {"signal": "put", "confidence": 90, "reason": reason, "duration": 5}
+                    return {"signal": "put", "confidence": 92, "reason": reason, "duration": 5}
 
-            # Rule 4: MICRO-MOMENTUM EXPANSION (85% Sureshot)
-            elif is_uptrend and (c_close > c_open):
-                if last_loss_direction == "call" and asset_recent_loss_count >= 2:
-                    logger.warning(f"[{asset_name}] AI Loss Shield: Skipping CALL micro-momentum due to 2+ consecutive CALL losses.")
-                else:
-                    reason = "QUANT PRO [5s]: Micro-Uptrend Bullish Expansion. Signal = BUY (CALL, 5s Expiry)."
-                    logger.info(f"[{asset_name}] {reason}")
-                    return {"signal": "call", "confidence": 85, "reason": reason, "duration": 5}
-            elif is_downtrend and (c_close < c_open):
-                if last_loss_direction == "put" and asset_recent_loss_count >= 2:
-                    logger.warning(f"[{asset_name}] AI Loss Shield: Skipping PUT micro-momentum due to 2+ consecutive PUT losses.")
-                else:
-                    reason = "QUANT PRO [5s]: Micro-Downtrend Bearish Expansion. Signal = SELL (PUT, 5s Expiry)."
-                    logger.info(f"[{asset_name}] {reason}")
-                    return {"signal": "put", "confidence": 85, "reason": reason, "duration": 5}
-
-            # Rule 5: ADAPTIVE MICRO-CANDLE FLOW (80% Sureshot)
-            # Evaluates current candle body or previous closed 5s candle if current candle just opened (c_close == c_open)
-            elif c_close > c_open or (c_close == c_open and p_close > p_open):
-                if last_loss_direction == "call" and asset_recent_loss_count >= 2:
-                    logger.warning(f"[{asset_name}] AI Loss Shield: Skipping CALL micro-flow due to 2+ consecutive CALL losses.")
-                else:
-                    reason = "QUANT PRO [5s]: Micro-Candle Bullish Flow (Prev 5s Green). Signal = BUY (CALL, 5s Expiry)."
-                    logger.info(f"[{asset_name}] {reason}")
-                    return {"signal": "call", "confidence": 80, "reason": reason, "duration": 5}
-            elif c_close < c_open or (c_close == c_open and p_close < p_open):
-                if last_loss_direction == "put" and asset_recent_loss_count >= 2:
-                    logger.warning(f"[{asset_name}] AI Loss Shield: Skipping PUT micro-flow due to 2+ consecutive PUT losses.")
-                else:
-                    reason = "QUANT PRO [5s]: Micro-Candle Bearish Flow (Prev 5s Red). Signal = SELL (PUT, 5s Expiry)."
-                    logger.info(f"[{asset_name}] {reason}")
-                    return {"signal": "put", "confidence": 80, "reason": reason, "duration": 5}
+            # Selective Fallback: Do not force unconfirmed trades without indicator alignment
             else:
-                # Fallback: align with overall 20-period EMA trend
-                if is_uptrend:
-                    reason = "QUANT PRO [5s]: Trend Continuity Flow (Price >= EMA20). Signal = BUY (CALL, 5s Expiry)."
-                    logger.info(f"[{asset_name}] {reason}")
-                    return {"signal": "call", "confidence": 80, "reason": reason, "duration": 5}
-                else:
-                    reason = "QUANT PRO [5s]: Trend Continuity Flow (Price < EMA20). Signal = SELL (PUT, 5s Expiry)."
-                    logger.info(f"[{asset_name}] {reason}")
-                    return {"signal": "put", "confidence": 80, "reason": reason, "duration": 5}
+                logger.info(f"[{asset_name}] Skipping 5s trade: Waiting for 90%+ indicator confluence.")
+                return {"signal": "doji", "confidence": 0, "reason": "Waiting for 90%+ indicator confluence"}
 
         # Calculate EMA 50
         df['EMA_50'] = df['close'].ewm(span=50, adjust=False).mean()
