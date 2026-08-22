@@ -200,34 +200,52 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                     return {"signal": "put", "confidence": 98, "reason": reason, "duration": 5}
 
             # Rule 2: STRUCTURAL WICK REJECTION BOUNCE (>= 15% WICK) (95% Sureshot)
-            elif (lower_wick_ratio >= 0.15 or is_gap_down) and last_loss_direction != "call":
-                reason = f"QUANT PRO [5s]: Buyer Wick Rejection ({lower_wick_ratio*100:.1f}%). Signal = BUY (CALL, 5s Expiry)."
-                logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "call", "confidence": 95, "reason": reason, "duration": 5}
-            elif (upper_wick_ratio >= 0.15 or is_gap_up) and last_loss_direction != "put":
-                reason = f"QUANT PRO [5s]: Seller Wick Rejection ({upper_wick_ratio*100:.1f}%). Signal = SELL (PUT, 5s Expiry)."
-                logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "put", "confidence": 95, "reason": reason, "duration": 5}
+            elif (lower_wick_ratio >= 0.15 or is_gap_down):
+                if last_loss_direction == "call" and asset_recent_loss_count >= 2:
+                    logger.warning(f"[{asset_name}] AI Loss Shield: Skipping CALL wick bounce due to 2+ consecutive CALL losses.")
+                else:
+                    reason = f"QUANT PRO [5s]: Buyer Wick Rejection ({lower_wick_ratio*100:.1f}%). Signal = BUY (CALL, 5s Expiry)."
+                    logger.info(f"[{asset_name}] {reason}")
+                    return {"signal": "call", "confidence": 95, "reason": reason, "duration": 5}
+            elif (upper_wick_ratio >= 0.15 or is_gap_up):
+                if last_loss_direction == "put" and asset_recent_loss_count >= 2:
+                    logger.warning(f"[{asset_name}] AI Loss Shield: Skipping PUT wick bounce due to 2+ consecutive PUT losses.")
+                else:
+                    reason = f"QUANT PRO [5s]: Seller Wick Rejection ({upper_wick_ratio*100:.1f}%). Signal = SELL (PUT, 5s Expiry)."
+                    logger.info(f"[{asset_name}] {reason}")
+                    return {"signal": "put", "confidence": 95, "reason": reason, "duration": 5}
 
             # Rule 3: DUAL EMA CONFLUENCE TREND IMPULSE (90% Sureshot)
-            elif (c_close > ema_20) and (ema_20 > ema_50) and (c_close >= c_open) and last_loss_direction != "call":
-                reason = "QUANT PRO [5s]: Strong Bullish Trend Impulse (Price > EMA_20 > EMA_50). Signal = BUY (CALL, 5s Expiry)."
-                logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "call", "confidence": 90, "reason": reason, "duration": 5}
-            elif (c_close < ema_20) and (ema_20 < ema_50) and (c_close <= c_open) and last_loss_direction != "put":
-                reason = "QUANT PRO [5s]: Strong Bearish Trend Impulse (Price < EMA_20 < EMA_50). Signal = SELL (PUT, 5s Expiry)."
-                logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "put", "confidence": 90, "reason": reason, "duration": 5}
+            elif (c_close > ema_20) and (ema_20 > ema_50) and (c_close >= c_open):
+                if last_loss_direction == "call" and asset_recent_loss_count >= 2:
+                    logger.warning(f"[{asset_name}] AI Loss Shield: Skipping CALL trend impulse due to 2+ consecutive CALL losses.")
+                else:
+                    reason = "QUANT PRO [5s]: Strong Bullish Trend Impulse (Price > EMA_20 > EMA_50). Signal = BUY (CALL, 5s Expiry)."
+                    logger.info(f"[{asset_name}] {reason}")
+                    return {"signal": "call", "confidence": 90, "reason": reason, "duration": 5}
+            elif (c_close < ema_20) and (ema_20 < ema_50) and (c_close <= c_open):
+                if last_loss_direction == "put" and asset_recent_loss_count >= 2:
+                    logger.warning(f"[{asset_name}] AI Loss Shield: Skipping PUT trend impulse due to 2+ consecutive PUT losses.")
+                else:
+                    reason = "QUANT PRO [5s]: Strong Bearish Trend Impulse (Price < EMA_20 < EMA_50). Signal = SELL (PUT, 5s Expiry)."
+                    logger.info(f"[{asset_name}] {reason}")
+                    return {"signal": "put", "confidence": 90, "reason": reason, "duration": 5}
 
             # Rule 4: MICRO-MOMENTUM EXPANSION (85% Sureshot)
-            elif is_uptrend and (c_close > c_open) and (p_close >= p_open) and last_loss_direction != "call":
-                reason = "QUANT PRO [5s]: Micro-Uptrend Bullish Expansion. Signal = BUY (CALL, 5s Expiry)."
-                logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "call", "confidence": 85, "reason": reason, "duration": 5}
-            elif is_downtrend and (c_close < c_open) and (p_close <= p_open) and last_loss_direction != "put":
-                reason = "QUANT PRO [5s]: Micro-Downtrend Bearish Expansion. Signal = SELL (PUT, 5s Expiry)."
-                logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "put", "confidence": 85, "reason": reason, "duration": 5}
+            elif is_uptrend and (c_close > c_open):
+                if last_loss_direction == "call" and asset_recent_loss_count >= 2:
+                    logger.warning(f"[{asset_name}] AI Loss Shield: Skipping CALL micro-momentum due to 2+ consecutive CALL losses.")
+                else:
+                    reason = "QUANT PRO [5s]: Micro-Uptrend Bullish Expansion. Signal = BUY (CALL, 5s Expiry)."
+                    logger.info(f"[{asset_name}] {reason}")
+                    return {"signal": "call", "confidence": 85, "reason": reason, "duration": 5}
+            elif is_downtrend and (c_close < c_open):
+                if last_loss_direction == "put" and asset_recent_loss_count >= 2:
+                    logger.warning(f"[{asset_name}] AI Loss Shield: Skipping PUT micro-momentum due to 2+ consecutive PUT losses.")
+                else:
+                    reason = "QUANT PRO [5s]: Micro-Downtrend Bearish Expansion. Signal = SELL (PUT, 5s Expiry)."
+                    logger.info(f"[{asset_name}] {reason}")
+                    return {"signal": "put", "confidence": 85, "reason": reason, "duration": 5}
 
             else:
                 logger.info(f"[{asset_name}] Skipping 5s trade: No setup aligned.")
