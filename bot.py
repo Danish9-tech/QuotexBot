@@ -587,15 +587,25 @@ async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type:
             # ... (Failure logic: check reasons, handle Invalid credentials, Token rejected, PIN/Auth errors) ...
             logger.error(f"Quotex connection explicitly failed for {email}. Reason: {connection_reason}")
             reason_str = str(connection_reason) if connection_reason else "Unknown reason"
-            # (Include all failure checks from previous versions)
+            
+            # If authorization was rejected by Quotex, delete stale session files so a fresh login/PIN is performed
+            if any(term in reason_str.lower() for term in ["rejected", "token", "authorization"]):
+                logger.warning("Session token rejected by Quotex. Cleaning up stale session files for fresh login...")
+                try:
+                    for s_file in Path(".").glob("*.session*"):
+                        s_file.unlink(missing_ok=True)
+                    for s_file in Path(".").glob("session*.json"):
+                        s_file.unlink(missing_ok=True)
+                except Exception as clean_err:
+                    logger.warning(f"Could not clean session files: {clean_err}")
+
             if "Invalid credentials" in reason_str and interaction_type == "login_attempt":
                 await delete_quotex_account(account_doc_id)
                 return None, "Connection Failed: Invalid Credentials. Removed entry."
             elif "check your email" in reason_str.lower() or "verifique seu e-mail" in reason_str.lower() or "pin" in reason_str.lower():
                  return None, f"Connection Failed: Authentication error ({reason_str}). Check PIN/email or account status."
-            elif "Token rejected" in reason_str:
-                # ...(delete session file logic)...
-                return None, "Connection Failed: Token rejected. Session deleted."
+            elif "token" in reason_str.lower() or "rejected" in reason_str.lower():
+                return None, "Connection Failed: Session token expired/rejected. Stale session deleted."
             else:
                  return None, f"Connection Failed: {reason_str}"
 
