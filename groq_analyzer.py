@@ -176,14 +176,14 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
             df['EMA_50'] = df['close'].ewm(span=min(50, len(df)), adjust=False).mean()
             ema_50 = float(last_candle['EMA_50']) if not pd.isna(last_candle.get('EMA_50')) else c_close
 
-            # Flat Candle Tie Filter: Skip entry if price is static/tied to avoid automatic broker loss
-            if c_close == c_open or c_close == p_close:
-                logger.info(f"[{asset_name}] Skipping 5s trade: Flat candle tie risk (c_close == p_close).")
-                return {"signal": "doji", "confidence": 0, "reason": "Flat candle tie filter active"}
+            # Flat Doji Filter: Skip entry only if the candle has zero price range (absolute flat doji)
+            if c_close == c_open and total_range < 0.000001:
+                logger.info(f"[{asset_name}] Skipping 5s trade: Zero-range Doji candle.")
+                return {"signal": "doji", "confidence": 0, "reason": "Zero-range Doji candle"}
 
             # --- HIGH-CONVICTION 5S QUANT MATRIX ---
             # Rule 1: TRIPLE EXTREME CONFLUENCE REVERSAL (98% Ultra Sureshot)
-            if (is_touching_dc_lower or rsi_14 <= 30) and stoch_k <= 20:
+            if (is_touching_dc_lower or rsi_14 <= 35) and stoch_k <= 25:
                 if last_loss_direction == "call" and asset_recent_loss_count >= 2:
                     logger.warning(f"[{asset_name}] AI Loss Shield: Skipping CALL reversal due to 2+ consecutive CALL losses.")
                 else:
@@ -191,7 +191,7 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                     logger.info(f"[{asset_name}] {reason}")
                     return {"signal": "call", "confidence": 98, "reason": reason, "duration": 5}
 
-            elif (is_touching_dc_upper or rsi_14 >= 70) and stoch_k >= 80:
+            elif (is_touching_dc_upper or rsi_14 >= 65) and stoch_k >= 75:
                 if last_loss_direction == "put" and asset_recent_loss_count >= 2:
                     logger.warning(f"[{asset_name}] AI Loss Shield: Skipping PUT reversal due to 2+ consecutive PUT losses.")
                 else:
@@ -199,30 +199,39 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                     logger.info(f"[{asset_name}] {reason}")
                     return {"signal": "put", "confidence": 98, "reason": reason, "duration": 5}
 
-            # Rule 2: STRUCTURAL WICK REJECTION BOUNCE (>= 25% WICK) (95% Sureshot)
-            elif (lower_wick_ratio >= 0.25 or is_gap_down) and last_loss_direction != "call":
-                reason = f"QUANT PRO [5s]: Strong Buyer Wick Rejection ({lower_wick_ratio*100:.1f}%). Signal = BUY (CALL, 5s Expiry)."
+            # Rule 2: STRUCTURAL WICK REJECTION BOUNCE (>= 15% WICK) (95% Sureshot)
+            elif (lower_wick_ratio >= 0.15 or is_gap_down) and last_loss_direction != "call":
+                reason = f"QUANT PRO [5s]: Buyer Wick Rejection ({lower_wick_ratio*100:.1f}%). Signal = BUY (CALL, 5s Expiry)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "call", "confidence": 95, "reason": reason, "duration": 5}
-            elif (upper_wick_ratio >= 0.25 or is_gap_up) and last_loss_direction != "put":
-                reason = f"QUANT PRO [5s]: Strong Seller Wick Rejection ({upper_wick_ratio*100:.1f}%). Signal = SELL (PUT, 5s Expiry)."
+            elif (upper_wick_ratio >= 0.15 or is_gap_up) and last_loss_direction != "put":
+                reason = f"QUANT PRO [5s]: Seller Wick Rejection ({upper_wick_ratio*100:.1f}%). Signal = SELL (PUT, 5s Expiry)."
                 logger.info(f"[{asset_name}] {reason}")
                 return {"signal": "put", "confidence": 95, "reason": reason, "duration": 5}
 
-            # Rule 3: DUAL EMA CONFLUENCE TREND IMPULSE (92% Sureshot)
-            elif (c_close > ema_20) and (ema_20 > ema_50) and (c_close > c_open) and rsi_14 > 55 and stoch_k > 50 and last_loss_direction != "call":
-                reason = "QUANT PRO [5s]: Strong Bullish Trend Impulse (Price > EMA_20 > EMA_50 + RSI/Stoch Momentum). Signal = BUY (CALL, 5s Expiry)."
+            # Rule 3: DUAL EMA CONFLUENCE TREND IMPULSE (90% Sureshot)
+            elif (c_close > ema_20) and (ema_20 > ema_50) and (c_close >= c_open) and last_loss_direction != "call":
+                reason = "QUANT PRO [5s]: Strong Bullish Trend Impulse (Price > EMA_20 > EMA_50). Signal = BUY (CALL, 5s Expiry)."
                 logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "call", "confidence": 92, "reason": reason, "duration": 5}
-            elif (c_close < ema_20) and (ema_20 < ema_50) and (c_close < c_open) and rsi_14 < 45 and stoch_k < 50 and last_loss_direction != "put":
-                reason = "QUANT PRO [5s]: Strong Bearish Trend Impulse (Price < EMA_20 < EMA_50 + RSI/Stoch Momentum). Signal = SELL (PUT, 5s Expiry)."
+                return {"signal": "call", "confidence": 90, "reason": reason, "duration": 5}
+            elif (c_close < ema_20) and (ema_20 < ema_50) and (c_close <= c_open) and last_loss_direction != "put":
+                reason = "QUANT PRO [5s]: Strong Bearish Trend Impulse (Price < EMA_20 < EMA_50). Signal = SELL (PUT, 5s Expiry)."
                 logger.info(f"[{asset_name}] {reason}")
-                return {"signal": "put", "confidence": 92, "reason": reason, "duration": 5}
+                return {"signal": "put", "confidence": 90, "reason": reason, "duration": 5}
 
-            # Rule 4: HIGH CONVICTION SELECTIVITY FALLBACK (No low-conviction forced trades)
+            # Rule 4: MICRO-MOMENTUM EXPANSION (85% Sureshot)
+            elif is_uptrend and (c_close > c_open) and (p_close >= p_open) and last_loss_direction != "call":
+                reason = "QUANT PRO [5s]: Micro-Uptrend Bullish Expansion. Signal = BUY (CALL, 5s Expiry)."
+                logger.info(f"[{asset_name}] {reason}")
+                return {"signal": "call", "confidence": 85, "reason": reason, "duration": 5}
+            elif is_downtrend and (c_close < c_open) and (p_close <= p_open) and last_loss_direction != "put":
+                reason = "QUANT PRO [5s]: Micro-Downtrend Bearish Expansion. Signal = SELL (PUT, 5s Expiry)."
+                logger.info(f"[{asset_name}] {reason}")
+                return {"signal": "put", "confidence": 85, "reason": reason, "duration": 5}
+
             else:
-                logger.info(f"[{asset_name}] Skipping 5s trade: No high-conviction Sureshot setup triggered.")
-                return {"signal": "doji", "confidence": 0, "reason": "No high-conviction Sureshot setup triggered"}
+                logger.info(f"[{asset_name}] Skipping 5s trade: No setup aligned.")
+                return {"signal": "doji", "confidence": 0, "reason": "No setup aligned"}
 
         # Calculate EMA 50
         df['EMA_50'] = df['close'].ewm(span=50, adjust=False).mean()
