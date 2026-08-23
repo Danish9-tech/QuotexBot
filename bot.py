@@ -1100,17 +1100,38 @@ async def callback_query_handler(client: Client, callback_query: CallbackQuery):
               await callback_query.answer("Invalid trade mode selected.", show_alert=True)
 
 
-    elif data.startswith("set_csize:"): # Candle Size
+    elif data.startswith("set_csize:"): # Candle Size Interactive Selector
         account_doc_id = data.split(":")[1]
-        user_states[user_id] = f"waiting_candle_size:{account_doc_id}"
         settings = await get_or_create_trade_settings(account_doc_id)
-        await message.reply_text(
-            f"Enter the new **Candle Size** in seconds (e.g., 60, 120, 300).\n"
-            f"Current: `{settings.get('candle_size', DEFAULT_CANDLE_SIZE)}`s\n"
-            "Send /cancel to abort.",
-            reply_markup=ForceReply(selective=True),
-            parse_mode=enums.ParseMode.DEFAULT
-        )
+        current_size = settings.get('candle_size', DEFAULT_CANDLE_SIZE)
+        keyboard = [
+            [
+                InlineKeyboardButton(f"{'✅ ' if current_size == 5 else ''}5s", callback_data=f"csize_set:{account_doc_id}:5"),
+                InlineKeyboardButton(f"{'✅ ' if current_size == 10 else ''}10s", callback_data=f"csize_set:{account_doc_id}:10"),
+                InlineKeyboardButton(f"{'✅ ' if current_size == 15 else ''}15s", callback_data=f"csize_set:{account_doc_id}:15"),
+            ],
+            [
+                InlineKeyboardButton(f"{'✅ ' if current_size == 30 else ''}30s", callback_data=f"csize_set:{account_doc_id}:30"),
+                InlineKeyboardButton(f"{'✅ ' if current_size == 60 else ''}60s", callback_data=f"csize_set:{account_doc_id}:60"),
+            ],
+            back_button(f"qx_manage:{account_doc_id}")
+        ]
+        await message.edit_text(f"Select **Candle Size / Timeframe** for **{settings.get('email','N/A')}**:\nCurrent: `{current_size}`s", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data.startswith("csize_set:"):
+        parts = data.split(":")
+        account_doc_id, new_size = parts[1], int(parts[2])
+        if new_size in [5, 10, 15, 30, 60, 120, 300]:
+            await update_trade_setting(account_doc_id, {"candle_size": new_size, "trade_duration": new_size})
+            await callback_query.answer(f"Candle timeframe set to {new_size}s")
+            account_details = await get_quotex_account_details(account_doc_id)
+            settings = await get_or_create_trade_settings(account_doc_id)
+            await message.edit_text(
+                f"Managing account: **{account_details['email']}**\nCandle timeframe updated to {new_size}s.",
+                reply_markup=account_management_keyboard(account_doc_id, settings)
+            )
+        else:
+            await callback_query.answer("Invalid candle size selected.", show_alert=True)
 
     elif data.startswith("set_amode:"): # Account Mode (PRACTICE/REAL)
         account_doc_id = data.split(":")[1]
