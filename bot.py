@@ -2178,6 +2178,7 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
 
                            # Save to AI Trade History Database
                            if 'trade_history_db' in globals() and trade_history_db is not None:
+                               now_utc = datetime.datetime.now(datetime.timezone.utc)
                                trade_record = {
                                    "account_doc_id": str(account_doc_id),
                                    "asset": asset_name_open,
@@ -2186,7 +2187,9 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                                    "result": "WIN" if win_result else ("TIE" if profit_or_loss_amount == 0 else "LOSS"),
                                    "profit": profit_or_loss_amount,
                                    "amount": current_trade_amount,
-                                   "timestamp": datetime.datetime.now(datetime.timezone.utc)
+                                   "utc_hour": now_utc.hour,
+                                   "utc_day": now_utc.strftime("%A"),
+                                   "timestamp": now_utc
                                }
                                await trade_history_db.insert_one(trade_record)
                                logger.debug(f"[{asset_name_open}] Saved trade execution to AI memory database.")
