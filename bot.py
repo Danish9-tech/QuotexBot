@@ -750,6 +750,15 @@ async def start_command(client: Client, message: Message):
     await add_user_if_not_exists(user_id)
     logger.info(f"User {user_id} ({message.from_user.first_name}) started the bot.")
 
+    # Whitelist Check: Block non-whitelisted users from accessing bot features
+    if not await is_premium_user(user_id):
+        access_text = f"🔒 **Access Restricted (Private Whitelist Mode)**\n\n" \
+                      f"Hello {message.from_user.first_name}! This Quant Trading Bot is operating in **Private Whitelist Mode**.\n\n" \
+                      f"🆔 **Your Telegram ID:** `{user_id}`\n\n" \
+                      f"Contact the Admin to request access."
+        await message.reply_text(access_text, quote=True)
+        return
+
     welcome_text = f"👋 Welcome, {message.from_user.mention}!\n\n" \
                    f"This bot helps you interact with your Quotex account(s).\n\n" \
                    f"Use the buttons below to navigate."
