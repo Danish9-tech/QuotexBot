@@ -2293,7 +2293,8 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                  await asyncio.sleep(1)
 
             # --- End of Asset Loop ---
-            logger.debug(f"[Trading Task {account_doc_id}]: Finished asset processing cycle. Scanning next cycle immediately...")
+            logger.debug(f"[Trading Task {account_doc_id}]: Finished asset processing cycle. Releasing memory & scanning next cycle...")
+            gc.collect() # Force garbage collection to prevent memory accumulation and Linux OOM kills
             await asyncio.sleep(2) # 2s delay between cycles for continuous 24/7 scanning
 
         except asyncio.CancelledError:
