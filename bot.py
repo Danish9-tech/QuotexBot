@@ -588,13 +588,13 @@ async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type:
             logger.error(f"Quotex connection explicitly failed for {email}. Reason: {connection_reason}")
             reason_str = str(connection_reason) if connection_reason else "Unknown reason"
             
-            # If authorization was rejected by Quotex, delete stale session files so a fresh login/PIN is performed
+            # If authorization was rejected by Quotex, delete stale Quotex json session files so a fresh login is performed
             if any(term in reason_str.lower() for term in ["rejected", "token", "authorization"]):
-                logger.warning("Session token rejected by Quotex. Cleaning up stale session files for fresh login...")
+                logger.warning("Session token rejected by Quotex. Cleaning up stale Quotex session files for fresh login...")
                 try:
-                    for s_file in Path(".").glob("*.session*"):
-                        s_file.unlink(missing_ok=True)
                     for s_file in Path(".").glob("session*.json"):
+                        s_file.unlink(missing_ok=True)
+                    for s_file in Path(".").glob("qx_session*.json"):
                         s_file.unlink(missing_ok=True)
                 except Exception as clean_err:
                     logger.warning(f"Could not clean session files: {clean_err}")
@@ -2043,8 +2043,10 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
             # Use the user_id and account_doc_id passed to the function
             qx_client, status_msg = await get_quotex_client(user_id, account_doc_id, "trading")
             if not qx_client:
-                logger.error(f"[Trading Task {account_doc_id}]: Cannot get Quotex client ({status_msg}). Pausing for 60s.")
-                await asyncio.sleep(60)
+                logger.error(f"[Trading Task {account_doc_id}]: Cannot get Quotex client ({status_msg}). Re-authenticating in 15s...")
+                if account_doc_id in active_quotex_clients:
+                    del active_quotex_clients[account_doc_id]
+                await asyncio.sleep(15)
                 continue # Try again next iteration
             # Ensure client is connected
             if not await qx_client.check_connect():
@@ -2440,7 +2442,8 @@ async def run_bot():
         "QuotexBot",
         api_id=API_ID,
         api_hash=API_HASH,
-        bot_token=BOT_TOKEN
+        bot_token=BOT_TOKEN,
+        in_memory=True
     )
 
     # Add handlers using the proper pyrogram.handlers classes
