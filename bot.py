@@ -3,6 +3,7 @@ import os
 import gc
 import sys
 import time
+import inspect
 import concurrent.futures
 import asyncio
 import logging
@@ -656,19 +657,20 @@ async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type:
                  del active_otp_requests[user_id]
              else:
                  logger.warning(f"Context mismatch during finally cleanup for {user_id}/{account_doc_id}.")
-# ----------------------------------------------------
 
 async def disconnect_quotex_client(account_doc_id: str):
-    """Disconnects and removes a Quotex client instance."""
+    """Disconnects and removes a Quotex client instance safely."""
     global active_quotex_clients
     if account_doc_id in active_quotex_clients:
-        client = active_quotex_clients[account_doc_id]
-        logger.info(f"Disconnecting Quotex client for {account_doc_id}...")
-        try:
-            await client.close() # Assuming close is async
-        except Exception as e:
-            logger.warning(f"Error closing Quotex client for {account_doc_id}: {e}")
-        del active_quotex_clients[account_doc_id]
+        client = active_quotex_clients.pop(account_doc_id, None)
+        if client:
+            logger.info(f"Disconnecting Quotex client for {account_doc_id}...")
+            try:
+                res = client.close()
+                if inspect.isawaitable(res):
+                    await res
+            except Exception as e:
+                logger.warning(f"Error closing Quotex client for {account_doc_id}: {e}")
         logger.info(f"Removed Quotex client instance for {account_doc_id}.")
 
 
