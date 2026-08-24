@@ -77,8 +77,17 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "your_bot_token")
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 OWNER_ID = int(os.getenv("OWNER_ID", 987654321))  # Replace with a default value if needed
 
-# Basic Logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s')
+# Basic Logging (Writes to both bot.log file and console stream)
+file_handler = logging.FileHandler('bot.log', encoding='utf-8')
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'))
+
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'))
+
+logging.basicConfig(
+    level=logging.INFO,
+    handlers=[file_handler, console_handler]
+)
 logger = logging.getLogger(__name__)
 logging.getLogger("pyrofork").setLevel(logging.WARNING) # Reduce pyrogram verbosity
 logging.getLogger("pyquotex").setLevel(logging.INFO) # Hide noisy websocket logs
@@ -2024,8 +2033,21 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
     """The background task function that runs the trading logic for one account."""
     logger.info(f"[Trading Task {account_doc_id}]: Starting loop for User {user_id}")
     is_first_run = True # Flag to prevent immediate shutdown if turned off before first check
+    cycle_count = 0
 
     while True:
+        cycle_count += 1
+        # Periodic memory release every 60 cycles (~30-45 mins) to keep RAM usage under 200MB
+        if cycle_count % 60 == 0:
+            logger.info(f"[Trading Task {account_doc_id}]: Periodic RAM release (Cycle {cycle_count}). Flushing WebSocket buffers & clearing memory...")
+            if account_doc_id in active_quotex_clients:
+                try:
+                    old_c = active_quotex_clients.pop(account_doc_id)
+                    await old_c.close()
+                except Exception:
+                    pass
+            gc.collect()
+
         # --- Check External Cancellation ---
         # Important: Check if the task is still supposed to be running early in the loop
         if account_doc_id not in active_trading_tasks:
