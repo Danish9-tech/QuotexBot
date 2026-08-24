@@ -1898,6 +1898,7 @@ async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size:
     """
     Fetches candles and uses Groq AI to determine direction.
     """
+    global active_quotex_clients
     if not qx_client or not qx_client.check_connect:
         logger.warning(f"[{asset_name}] QX client not connected in _get_candle_direction.")
         return None, ""
@@ -1914,10 +1915,13 @@ async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size:
         try:
             candles = await asyncio.wait_for(
                 qx_client.get_historical_candles(asset_name, amount_of_seconds, candle_size),
-                timeout=3.0
+                timeout=7.0
             )
         except asyncio.TimeoutError:
-            logger.warning(f"[{asset_name}] Candle fetch timed out (3.0s limit). Skipping immediately to next asset.")
+            logger.warning(f"[{asset_name}] Candle fetch timed out (7.0s limit). Re-authenticating WebSocket connection...")
+            if account_doc_id in active_quotex_clients:
+                try: del active_quotex_clients[account_doc_id]
+                except: pass
             return None, "TIMEOUT", None 
 
         if candles and isinstance(candles, list) and len(candles) > 0:
@@ -1990,7 +1994,6 @@ async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size:
         error_str = str(e).lower()
         if "closed" in error_str or "connection" in error_str or "rejected" in error_str:
             logger.error(f"[{asset_name}] Websocket is dead in candle fetch. Nuking cache for {account_doc_id}.")
-            global active_quotex_clients
             if account_doc_id in active_quotex_clients:
                 del active_quotex_clients[account_doc_id]
         return None, "", None
