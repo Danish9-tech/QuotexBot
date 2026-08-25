@@ -2544,14 +2544,13 @@ async def run_bot():
             logger.info("Bot stopped.")
 
 if __name__ == "__main__":
-     # Basic check for config existence might be needed here if not using Env Vars
-    print("Starting Quotex Trading Bot...")
-    # Run the asynchronous main function
-    try:
-        asyncio.run(run_bot())
-    except RuntimeError as e:
-         # Handle potential loop issues on exit in some environments
-        if "Event loop is closed" in str(e):
-            print("Event loop closed.")
-        else:
-            raise e
+    print("Starting Quotex Trading Bot (Self-Healing Watchdog Mode)...")
+    while True:
+        try:
+            asyncio.run(run_bot())
+        except KeyboardInterrupt:
+            print("Bot manually stopped by user (KeyboardInterrupt). Exiting.")
+            break
+        except Exception as main_loop_err:
+            print(f"Top-level exception caught: {main_loop_err}. Auto-restarting bot process in 5s...")
+            time.sleep(5)
