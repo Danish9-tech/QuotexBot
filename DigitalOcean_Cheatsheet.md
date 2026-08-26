@@ -14,6 +14,34 @@ source .venv/bin/activate
 
 ---
 
+## 1.1 Recommended 24/7 Linux Systemd Daemon Mode (Bulletproof Auto-Restart)
+This is the recommended industry-standard way to run the bot 24/7 on Ubuntu. It runs completely in the background without needing `tmux` or active SSH terminals, automatically restarts if the server reboots, and auto-heals if network timeouts occur.
+
+**1-Click Installation Command:**
+```bash
+cd ~/QuotexBot && git pull && chmod +x setup_systemd.sh && ./setup_systemd.sh
+```
+
+**Essential Systemd Management Commands:**
+* **Check Live Status:**
+  ```bash
+  systemctl status quotexbot
+  ```
+* **View Real-Time Live Logs:**
+  ```bash
+  tail -f ~/QuotexBot/bot.log
+  ```
+* **Restart Bot:**
+  ```bash
+  systemctl restart quotexbot
+  ```
+* **Stop Bot:**
+  ```bash
+  systemctl stop quotexbot
+  ```
+
+---
+
 ## 2. Managing 24/7 Background Sessions (tmux)
 If you just run the bot normally, it will die the moment you close your browser. `tmux` creates a "virtual screen" that stays alive forever.
 
