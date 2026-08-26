@@ -243,25 +243,25 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                     logger.info(f"[{asset_name}] {reason}")
                     return {"signal": "put", "confidence": 92, "reason": reason, "duration": 10}
 
-            # Rule 4: HIGH-CONFIDENCE TREND MOMENTUM (Must have RSI confirmation to avoid chop)
-            elif is_uptrend and rsi_14 >= 52:
+            # Rule 4: TREND MOMENTUM CONTINUATION
+            elif is_uptrend:
                 if last_loss_direction == "call" and asset_recent_loss_count >= 2:
                     logger.warning(f"[{asset_name}] AI Loss Shield: Skipping CALL trend momentum due to 2+ consecutive CALL losses.")
                 else:
-                    reason = f"QUANT PRO [10s]: Confirmed Uptrend Momentum (Price >= EMA20 & RSI {rsi_14:.1f} >= 52). Signal = BUY (CALL, 10s Expiry)."
+                    reason = f"QUANT PRO [10s]: Uptrend Momentum (Price >= EMA20 & RSI {rsi_14:.1f}). Signal = BUY (CALL, 10s Expiry)."
                     logger.info(f"[{asset_name}] {reason}")
-                    return {"signal": "call", "confidence": 90, "reason": reason, "duration": 10}
-            elif is_downtrend and rsi_14 <= 48:
+                    return {"signal": "call", "confidence": 88, "reason": reason, "duration": 10}
+            elif is_downtrend:
                 if last_loss_direction == "put" and asset_recent_loss_count >= 2:
                     logger.warning(f"[{asset_name}] AI Loss Shield: Skipping PUT trend momentum due to 2+ consecutive PUT losses.")
                 else:
-                    reason = f"QUANT PRO [10s]: Confirmed Downtrend Momentum (Price < EMA20 & RSI {rsi_14:.1f} <= 48). Signal = SELL (PUT, 10s Expiry)."
+                    reason = f"QUANT PRO [10s]: Downtrend Momentum (Price < EMA20 & RSI {rsi_14:.1f}). Signal = SELL (PUT, 10s Expiry)."
                     logger.info(f"[{asset_name}] {reason}")
-                    return {"signal": "put", "confidence": 90, "reason": reason, "duration": 10}
+                    return {"signal": "put", "confidence": 88, "reason": reason, "duration": 10}
 
             else:
-                logger.info(f"[{asset_name}] Skipping 10s trade: Market in chop/sideways. Waiting for high-probability setup.")
-                return {"signal": "doji", "confidence": 0, "reason": "Market in chop/sideways. Waiting for high-probability setup."}
+                logger.info(f"[{asset_name}] Skipping 10s trade: Waiting for signal setup.")
+                return {"signal": "doji", "confidence": 0, "reason": "Waiting for signal setup"}
 
         # Calculate EMA 50
         df['EMA_50'] = df['close'].ewm(span=50, adjust=False).mean()
