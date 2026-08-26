@@ -134,8 +134,8 @@ COOLDOWN_MINUTES = 15
 
 # --- PROFIT OPTIMIZATION FILTERS ---
 TOXIC_ASSET_BLACKLIST = {"AUDNZD_otc", "USDARS_otc", "USDNGN_otc", "USDEGP_otc", "NZDCAD_otc", "AUDNZD", "USDARS", "USDNGN", "USDEGP", "NZDCAD"}
-MIN_PROFIT_PAYOUT = 80 # Minimum 80% payout required for high EV trading
-ENABLE_TIMESTAMP_FILTER = True # Enforce entry around peak profit timestamp windows
+MIN_PROFIT_PAYOUT = 70 # Minimum 70% payout required for high EV trading
+ENABLE_TIMESTAMP_FILTER = False # Allow 24/7 continuous execution on high-probability setups
 PRIME_EXECUTION_SECONDS = {14, 15, 16, 17, 18, 24, 25, 26, 27, 28, 44, 45, 46, 47, 48, 53, 54, 55, 56, 57, 58}
 
 
