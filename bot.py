@@ -2161,7 +2161,7 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
             # Extract settings needed
             assets_to_trade = settings.get("assets", [])
             trade_mode = settings.get("trade_mode", DEFAULT_TRADE_MODE) # 'TIME' or 'TIMER'
-            candle_size = 10 # 10-second candle timeframe for Sureshot strategy
+            candle_size = int(settings.get("candle_size", DEFAULT_CANDLE_SIZE))
             martingale_state_db = settings.get("martingale_state", {})
             cooldown_until_db = settings.get("cooldown_until", 0.0)
 
@@ -2219,8 +2219,7 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
 
                  asset_name_original = asset_info.get('name')
                  base_amount = settings.get('trade_amount', asset_info.get('amount', DEFAULT_TRADE_AMOUNT))
-                 # Enforce strict 5-second trade duration globally as requested
-                 duration_or_timeframe_value = 5
+                 duration_or_timeframe_value = candle_size
 
                  if not asset_name_original: continue # Skip if asset structure is invalid
 
@@ -2300,7 +2299,7 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
 
 
                  # 4c. Place the Trade
-                 actual_duration = custom_dur if (custom_dur is not None and custom_dur > 0) else (DEFAULT_TRADE_DURATION if DEFAULT_TRADE_DURATION > 0 else 10)
+                 actual_duration = custom_dur if (custom_dur is not None and custom_dur > 0) else candle_size
                  logger.info(f"[{asset_name_open}] Placing {direction.upper()} trade. Amount: {current_trade_amount}, Exp: {actual_duration}s, Mode: TIMER")
                  trade_placed_success = False
                  profit_or_loss_amount = 0
