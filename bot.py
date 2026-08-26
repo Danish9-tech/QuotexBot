@@ -2094,6 +2094,21 @@ async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size:
 async def _check_asset_open_and_get_name(qx_client: Quotex, asset_name_original: str) -> Optional[str]:
     """Checks if asset or its OTC variant is open, returns the name of the open asset or None."""
     try:
+        # Handle Commodity Symbol & Name Cleanups for Quotex
+        clean_input = asset_name_original.replace(" (OTC)", "").replace("(OTC)", "").strip()
+        commodity_map = {
+            "gold": "Gold_otc",
+            "xauusd": "Gold_otc",
+            "silver": "Silver_otc",
+            "xagusd": "Silver_otc",
+            "ukbrent": "UKBrent_otc",
+            "uscrude": "USCrude_otc"
+        }
+        if clean_input.lower() in commodity_map:
+            asset_name_original = commodity_map[clean_input.lower()]
+        elif not asset_name_original.endswith("_otc") and clean_input.lower() in ["ukbrent", "uscrude", "gold", "silver"]:
+            asset_name_original = f"{clean_input}_otc"
+
         # Check original asset first with 2.0s timeout
         try:
             checked_name, data = await asyncio.wait_for(qx_client.get_available_asset(asset_name_original, force_open=False), timeout=2.0)
