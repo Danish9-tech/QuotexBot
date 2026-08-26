@@ -285,6 +285,7 @@ async def get_or_create_trade_settings(account_doc_id: str) -> Dict[str, Any]:
             "account_mode": "PRACTICE", # PRACTICE / REAL
             "trade_mode": DEFAULT_TRADE_MODE, # TIMER / TIME
             "candle_size": DEFAULT_CANDLE_SIZE, # seconds
+            "trade_amount": DEFAULT_TRADE_AMOUNT, # USD base amount
             "service_status": DEFAULT_SERVICE_STATUS, # Trading on/off (boolean)
             "assets": [], # List of dicts: {'name': str, 'amount': int, 'duration': int}
             # Martingale state can also be stored here per asset if needed for persistence
@@ -297,7 +298,8 @@ async def get_or_create_trade_settings(account_doc_id: str) -> Dict[str, Any]:
     # Ensure all default keys exist in case new settings are added later
     defaults = {
         "account_mode": "PRACTICE", "trade_mode": DEFAULT_TRADE_MODE,
-        "candle_size": DEFAULT_CANDLE_SIZE, "service_status": DEFAULT_SERVICE_STATUS,
+        "candle_size": DEFAULT_CANDLE_SIZE, "trade_amount": DEFAULT_TRADE_AMOUNT,
+        "service_status": DEFAULT_SERVICE_STATUS,
         "assets": [], "martingale_state": {}, "cooldown_until": 0.0
     }
     updated = False
@@ -725,9 +727,11 @@ def account_management_keyboard(account_doc_id: str, settings: Dict) -> InlineKe
              InlineKeyboardButton(f"Mode: {settings.get('trade_mode', 'N/A')}", callback_data=f"set_tmode:{account_doc_id}"),
         ],
         [
-            InlineKeyboardButton(f"Candle: {settings.get('candle_size', 'N/A')}s", callback_data=f"set_csize:{account_doc_id}"),
+             InlineKeyboardButton(f"Candle: {settings.get('candle_size', 'N/A')}s", callback_data=f"set_csize:{account_doc_id}"),
              InlineKeyboardButton(f"Acct: {settings.get('account_mode', 'N/A')}", callback_data=f"set_amode:{account_doc_id}"),
-
+        ],
+        [
+             InlineKeyboardButton(f"💵 Amount: ${settings.get('trade_amount', DEFAULT_TRADE_AMOUNT)}", callback_data=f"set_amount:{account_doc_id}"),
         ],
         [
              InlineKeyboardButton(toggle_trading_text, callback_data=f"toggle_trade:{account_doc_id}"),
@@ -1196,6 +1200,51 @@ async def callback_query_handler(client: Client, callback_query: CallbackQuery):
              )
          else:
               await callback_query.answer("Invalid account mode selected.", show_alert=True)
+
+    elif data.startswith("set_amount:"): # Base Trade Amount Selector
+        account_doc_id = data.split(":")[1]
+        settings = await get_or_create_trade_settings(account_doc_id)
+        current_amount = settings.get('trade_amount', DEFAULT_TRADE_AMOUNT)
+        keyboard = [
+            [
+                InlineKeyboardButton(f"{'✅ ' if current_amount == 1 else ''}$1", callback_data=f"amount_set:{account_doc_id}:1"),
+                InlineKeyboardButton(f"{'✅ ' if current_amount == 2 else ''}$2", callback_data=f"amount_set:{account_doc_id}:2"),
+                InlineKeyboardButton(f"{'✅ ' if current_amount == 5 else ''}$5", callback_data=f"amount_set:{account_doc_id}:5"),
+            ],
+            [
+                InlineKeyboardButton(f"{'✅ ' if current_amount == 10 else ''}$10", callback_data=f"amount_set:{account_doc_id}:10"),
+                InlineKeyboardButton(f"{'✅ ' if current_amount == 25 else ''}$25", callback_data=f"amount_set:{account_doc_id}:25"),
+                InlineKeyboardButton(f"{'✅ ' if current_amount == 50 else ''}$50", callback_data=f"amount_set:{account_doc_id}:50"),
+            ],
+            [
+                InlineKeyboardButton("✏️ Custom Amount (Type)", callback_data=f"amount_custom:{account_doc_id}"),
+            ],
+            back_button(f"qx_manage:{account_doc_id}")
+        ]
+        await message.edit_text(f"Select or Type **Base Trade Amount**:\nCurrent Base Amount: `${current_amount:.2f}`", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data.startswith("amount_set:"):
+        parts = data.split(":")
+        account_doc_id, new_amount = parts[1], float(parts[2])
+        if new_amount > 0:
+            await update_trade_setting(account_doc_id, {"trade_amount": new_amount})
+            await callback_query.answer(f"Base trade amount set to ${new_amount:.2f}")
+            account_details = await get_quotex_account_details(account_doc_id)
+            settings = await get_or_create_trade_settings(account_doc_id)
+            await message.edit_text(
+                f"Managing account: **{account_details['email']}**\nTrade amount updated to **${new_amount:.2f}**.",
+                reply_markup=account_management_keyboard(account_doc_id, settings)
+            )
+
+    elif data.startswith("amount_custom:"):
+        account_doc_id = data.split(":")[1]
+        user_states[user_id] = f"waiting_custom_amount:{account_doc_id}"
+        await message.reply_text(
+            "✍️ **Enter Custom Trade Amount**\n"
+            "Please reply with your desired trade amount in USD (e.g., `1`, `2.5`, `10`).\n"
+            "Send /cancel to abort.",
+            reply_markup=ForceReply(selective=True)
+        )
 
 
         # Example for toggle_trade:
@@ -1698,8 +1747,23 @@ async def message_handler(client: Client, message: Message):
                  if user_id in active_otp_requests: del active_otp_requests[user_id]
 
         else:
-            await message.reply_text("Password cannot be empty. Please try again or send /cancel.")
+             await message.reply_text("Password cannot be empty. Please try again or send /cancel.")
 
+    elif state and state.startswith("waiting_custom_amount:"):
+        account_doc_id = state.split(":")[1]
+        del user_states[user_id]
+        try:
+            val = float(text.strip('$').strip())
+            if val <= 0:
+                raise ValueError()
+            await update_trade_setting(account_doc_id, {"trade_amount": val})
+            settings_reloaded = await get_or_create_trade_settings(account_doc_id)
+            await message.reply_text(
+                f"✅ Base trade amount set to **${val:.2f}**!",
+                reply_markup=account_management_keyboard(account_doc_id, settings_reloaded)
+            )
+        except ValueError:
+            await message.reply_text("❌ Invalid amount. Please enter a valid positive number (e.g., 1, 2, 5).")
 
     elif state and state.startswith("waiting_asset_add:"):
          account_doc_id = state.split(":")[1]
@@ -2154,7 +2218,7 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                      break # Break from assets loop for this cycle
 
                  asset_name_original = asset_info.get('name')
-                 base_amount = asset_info.get('amount', DEFAULT_TRADE_AMOUNT)
+                 base_amount = settings.get('trade_amount', asset_info.get('amount', DEFAULT_TRADE_AMOUNT))
                  # Enforce strict 5-second trade duration globally as requested
                  duration_or_timeframe_value = 5
 
