@@ -122,7 +122,7 @@ active_otp_requests: Dict[int, Dict[str, Any]] = {}
 # Temporary storage for ongoing user actions (e.g., waiting for broadcast message)
 user_states: Dict[int, str] = {} # e.g., {user_id: "waiting_broadcast_message"}
 
-DEFAULT_TRADE_AMOUNT = 5
+DEFAULT_TRADE_AMOUNT = 1 # $1 default base trade amount
 DEFAULT_TRADE_DURATION = 10 # 10-second turbo trades by default
 DEFAULT_TRADE_MODE = "TIMER" # 'TIMER' or 'TIME'
 DEFAULT_CANDLE_SIZE = 10 # 10-second candles for Sureshot strategy
@@ -2250,6 +2250,18 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                            settle_wait = actual_duration + 1.0
                            logger.info(f"[{asset_name_open}] Trade placed successfully! ID: {trade_id}. Waiting {settle_wait}s for settlement...")
 
+                           try:
+                               placement_text = (
+                                   f"🚀 **Trade Executed!**\n"
+                                   f"• **Asset:** `{asset_name_open}`\n"
+                                   f"• **Direction:** **{direction.upper()}**\n"
+                                   f"• **Amount Executed:** **${current_trade_amount:.2f}**\n"
+                                   f"• **Duration:** **{actual_duration}s**"
+                               )
+                               await bot_instance.send_message(user_id, placement_text)
+                           except Exception as te:
+                               logger.warning(f"Failed to send trade placement message to Telegram: {te}")
+
                            # Wait precisely for trade expiry + 1.0s broker settlement
                            await asyncio.sleep(settle_wait)
 
@@ -2290,7 +2302,7 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
 
                            if win_result:
                                 logger.info(f"[{asset_name_open}] Trade Result: WIN! Profit: {profit_or_loss_amount:.2f}")
-                                await bot_instance.send_message(user_id, f"✅ Trade Result: WIN! Profit: {profit_or_loss_amount:.2f}")  
+                                await bot_instance.send_message(user_id, f"✅ **Trade Result: WIN!**\n• **Asset:** `{asset_name_open}`\n• **Executed Amount:** **${current_trade_amount:.2f}**\n• **Profit:** **+${profit_or_loss_amount:.2f}**")
                                 # Reset MTG state for this asset on WIN
                                 asset_mtg['current_amount'] = base_amount
                                 asset_mtg['consecutive_losses'] = 0
@@ -2303,11 +2315,11 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                            else:
                                 if profit_or_loss_amount == 0: # Tie / Doji
                                     logger.warning(f"[{asset_name_open}] Trade Result: TIE/DOJI.")
-                                    await bot_instance.send_message(user_id, f"⚠️ Trade Result: TIE/DOJI. No profit/loss.")
+                                    await bot_instance.send_message(user_id, f"⚠️ **Trade Result: TIE / DOJI**\n• **Asset:** `{asset_name_open}`\n• **Executed Amount:** **${current_trade_amount:.2f}**\n• **Profit:** **$0.00**")
                                     # No change in MTG state needed for a tie
                                 else: # Loss
                                     logger.warning(f"[{asset_name_open}] Trade Result: LOSS! Lost: {abs(profit_or_loss_amount):.2f}")
-                                    await bot_instance.send_message(user_id, f"❌ Trade Result: LOSS! Lost: {abs(profit_or_loss_amount):.2f}")
+                                    await bot_instance.send_message(user_id, f"❌ **Trade Result: LOSS!**\n• **Asset:** `{asset_name_open}`\n• **Executed Amount:** **${current_trade_amount:.2f}**\n• **Lost:** **-${abs(profit_or_loss_amount):.2f}**")
                                     asset_mtg['consecutive_losses'] += 1
                                     await update_trade_setting(account_doc_id, {
                                         f"martingale_state.{asset_name_open}.current_amount": asset_mtg['current_amount'],
