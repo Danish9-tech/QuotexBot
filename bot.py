@@ -2025,18 +2025,26 @@ async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size:
                     )
                     recent_trades = asset_trades + global_losses
 
-                    # LOSS COOLDOWN: Only pause for 3 minutes (180 seconds) after 2 consecutive losses
+                    # LOSS COOLDOWN: Pause for 5 minutes (300 seconds) after 2 consecutive losses
                     now_ts = time.time()
                     recent_losses_in_window = 0
                     for t in asset_trades[:2]:
                         if t.get("result") == "LOSS":
                             t_time = t.get("timestamp")
-                            if isinstance(t_time, (int, float)) and (now_ts - t_time < 180):
+                            age_seconds = None
+                            if isinstance(t_time, (int, float)):
+                                age_seconds = now_ts - t_time
+                            elif hasattr(t_time, 'timestamp'):
+                                age_seconds = now_ts - t_time.timestamp()
+                            elif isinstance(t_time, datetime.datetime):
+                                age_seconds = (datetime.datetime.now(datetime.timezone.utc) - t_time.replace(tzinfo=datetime.timezone.utc)).total_seconds()
+                            
+                            if age_seconds is not None and age_seconds < 300: # 5 minutes window
                                 recent_losses_in_window += 1
                                 
                     if recent_losses_in_window >= 2:
-                        logger.warning(f"[{asset_name}] LOSS COOLDOWN: Asset lost 2+ times in last 3m. Pausing temporarily.")
-                        return 'doji', f"LOSS COOLDOWN: {asset_name} lost 2+ times in last 3m.", None
+                        logger.warning(f"[{asset_name}] LOSS COOLDOWN: Asset lost 2+ times in last 5m. Pausing temporarily.")
+                        return 'doji', f"LOSS COOLDOWN: {asset_name} lost 2+ times in last 5m.", None
                 except Exception as db_q_err:
                     logger.warning(f"[{asset_name}] Quick DB query skip: {db_q_err}")
 
