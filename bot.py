@@ -133,10 +133,33 @@ MAX_CONSECUTIVE_LOSSES = 3
 COOLDOWN_MINUTES = 15
 
 # --- PROFIT OPTIMIZATION FILTERS ---
-TOXIC_ASSET_BLACKLIST = {"AUDNZD_otc", "USDARS_otc", "USDNGN_otc", "USDEGP_otc", "NZDCAD_otc", "AUDNZD", "USDARS", "USDNGN", "USDEGP", "NZDCAD"}
+TOXIC_ASSET_BLACKLIST = {"AUDNZD_otc", "USDARS_otc", "USDNGN_otc", "USDEGP_otc", "AUDNZD", "USDARS", "USDNGN", "USDEGP"}
 MIN_PROFIT_PAYOUT = 70 # Minimum 70% payout required for high EV trading
 ENABLE_TIMESTAMP_FILTER = False # Allow 24/7 continuous execution on high-probability setups
 PRIME_EXECUTION_SECONDS = {14, 15, 16, 17, 18, 24, 25, 26, 27, 28, 44, 45, 46, 47, 48, 53, 54, 55, 56, 57, 58}
+
+DEFAULT_HIGH_PAYOUT_ASSETS = [
+    {"name": "UKBrent_otc", "amount": 1, "duration": 10},
+    {"name": "Gold_otc", "amount": 1, "duration": 10},
+    {"name": "USCrude_otc", "amount": 1, "duration": 10},
+    {"name": "Silver_otc", "amount": 1, "duration": 10},
+    {"name": "USDBRL_otc", "amount": 1, "duration": 10},
+    {"name": "NZDCAD_otc", "amount": 1, "duration": 10},
+    {"name": "EURGBP_otc", "amount": 1, "duration": 10},
+    {"name": "EURJPY_otc", "amount": 1, "duration": 10},
+    {"name": "USDIDR_otc", "amount": 1, "duration": 10},
+    {"name": "GBPJPY_otc", "amount": 1, "duration": 10},
+    {"name": "USDZAR_otc", "amount": 1, "duration": 10},
+    {"name": "AUDCHF_otc", "amount": 1, "duration": 10},
+    {"name": "EURCAD_otc", "amount": 1, "duration": 10},
+    {"name": "USDPKR_otc", "amount": 1, "duration": 10},
+    {"name": "USDCOP_otc", "amount": 1, "duration": 10},
+    {"name": "NZDCHF_otc", "amount": 1, "duration": 10},
+    {"name": "USDJPY_otc", "amount": 1, "duration": 10},
+    {"name": "CADCHF_otc", "amount": 1, "duration": 10},
+    {"name": "CADJPY_otc", "amount": 1, "duration": 10},
+    {"name": "CHFJPY_otc", "amount": 1, "duration": 10}
+]
 
 
 # --- Database Setup ---
@@ -287,7 +310,7 @@ async def get_or_create_trade_settings(account_doc_id: str) -> Dict[str, Any]:
             "candle_size": DEFAULT_CANDLE_SIZE, # seconds
             "trade_amount": DEFAULT_TRADE_AMOUNT, # USD base amount
             "service_status": DEFAULT_SERVICE_STATUS, # Trading on/off (boolean)
-            "assets": [], # List of dicts: {'name': str, 'amount': int, 'duration': int}
+            "assets": list(DEFAULT_HIGH_PAYOUT_ASSETS), # List of dicts: {'name': str, 'amount': int, 'duration': int}
             # Martingale state can also be stored here per asset if needed for persistence
             "martingale_state": {}, # { asset_name: {'current_amount': float, 'consecutive_losses': int}}
             "cooldown_until": 0.0, # Timestamp
@@ -300,7 +323,7 @@ async def get_or_create_trade_settings(account_doc_id: str) -> Dict[str, Any]:
         "account_mode": "PRACTICE", "trade_mode": DEFAULT_TRADE_MODE,
         "candle_size": DEFAULT_CANDLE_SIZE, "trade_amount": DEFAULT_TRADE_AMOUNT,
         "service_status": DEFAULT_SERVICE_STATUS,
-        "assets": [], "martingale_state": {}, "cooldown_until": 0.0
+        "assets": list(DEFAULT_HIGH_PAYOUT_ASSETS), "martingale_state": {}, "cooldown_until": 0.0
     }
     updated = False
     for key, default_value in defaults.items():
