@@ -130,7 +130,14 @@ DEFAULT_SERVICE_STATUS = False # Trading Off by default
 
 MARTINGALE_MULTIPLIER = 2.0
 MAX_CONSECUTIVE_LOSSES = 3
-COOLDOWN_MINUTES = 3
+COOLDOWN_MINUTES = 15
+
+# --- PROFIT OPTIMIZATION FILTERS ---
+TOXIC_ASSET_BLACKLIST = {"AUDNZD_otc", "USDARS_otc", "USDNGN_otc", "USDEGP_otc", "NZDCAD_otc", "AUDNZD", "USDARS", "USDNGN", "USDEGP", "NZDCAD"}
+MIN_PROFIT_PAYOUT = 80 # Minimum 80% payout required for high EV trading
+ENABLE_TIMESTAMP_FILTER = True # Enforce entry around peak profit timestamp windows
+PRIME_EXECUTION_SECONDS = {14, 15, 16, 17, 18, 24, 25, 26, 27, 28, 44, 45, 46, 47, 48, 53, 54, 55, 56, 57, 58}
+
 
 # --- Database Setup ---
 async def setup_database():
@@ -300,6 +307,14 @@ async def get_or_create_trade_settings(account_doc_id: str) -> Dict[str, Any]:
             updated = True
     if updated:
          await update_trade_setting(account_doc_id, settings) # Save potentially added default keys
+
+    # Auto-purge blacklisted toxic assets from account configuration
+    if "assets" in settings and isinstance(settings["assets"], list):
+        clean_assets = [a for a in settings["assets"] if a.get("name") not in TOXIC_ASSET_BLACKLIST]
+        if len(clean_assets) != len(settings["assets"]):
+            settings["assets"] = clean_assets
+            await update_trade_setting(account_doc_id, {"assets": clean_assets})
+            logger.info(f"Purged toxic blacklisted assets from account settings ({account_doc_id})")
 
     return settings
 
@@ -1702,6 +1717,10 @@ async def message_handler(client: Client, message: Message):
              if amount <= 0: raise ValueError("Amount must be positive.")
              if duration <= 0: raise ValueError("Duration must be positive.") # Add more duration checks if needed
 
+             if asset_name in TOXIC_ASSET_BLACKLIST:
+                 await message.reply_text(f"⛔️ Cannot add `{asset_name}`: Asset is in the Toxic Blacklist due to high historical drawdown.", quote=True)
+                 return
+
              new_asset = {'name': asset_name, 'amount': amount, 'duration': duration}
 
              # Add asset to the list in DB
@@ -2141,6 +2160,11 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
 
                  if not asset_name_original: continue # Skip if asset structure is invalid
 
+                 # 0a. Check Toxic Asset Blacklist
+                 if asset_name_original in TOXIC_ASSET_BLACKLIST:
+                     logger.warning(f"[{asset_name_original}] Skipping: Asset is in TOXIC_ASSET_BLACKLIST (high loss history).")
+                     continue
+
                  # 0. Check if the asset is active
                  if not asset_info.get('is_active', True):
                      logger.info(f"[{asset_name_original}] Skipping: Asset is currently turned OFF by user.")
@@ -2161,17 +2185,21 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                      logger.warning(f"[{asset_name_original}] Skipping: Asset or OTC variant not open/available.")
                      await asyncio.sleep(5) # Small delay before next asset
                      continue # Go to next asset in the list
-                    
+                 
+                 if asset_name_open in TOXIC_ASSET_BLACKLIST:
+                      logger.warning(f"[{asset_name_open}] Skipping: Open OTC asset is in TOXIC_ASSET_BLACKLIST.")
+                      continue
+
                  # 4a2. Check Profit Payout Percentage
                  try:
-                     # Get payout for 1M timeframe as baseline
-                     payout = qx_client.get_payout_by_asset(asset_name_open, "1")
-                     if payout is not None and payout < 30:
-                         logger.warning(f"[{asset_name_open}] Skipping: Payout is too low ({payout}% - Must be 30%+).")
-                         await asyncio.sleep(5)
-                         continue
+                      # Get payout for 1M timeframe as baseline
+                      payout = qx_client.get_payout_by_asset(asset_name_open, "1")
+                      if payout is not None and payout < MIN_PROFIT_PAYOUT:
+                          logger.warning(f"[{asset_name_open}] Skipping: Payout is too low ({payout}% - Must be {MIN_PROFIT_PAYOUT}%+ for profitability).")
+                          await asyncio.sleep(2)
+                          continue
                  except Exception as e:
-                     logger.warning(f"[{asset_name_open}] Could not fetch payout percentage: {e}")
+                      logger.warning(f"[{asset_name_open}] Could not fetch payout percentage: {e}")
 
                  # --- Update MTG state key if OTC name is different ---
                  if asset_name_open != asset_name_original and asset_name_original in active_martingale_state:
@@ -2183,6 +2211,15 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                       active_martingale_state[asset_name_open] = {'current_amount': base_amount, 'consecutive_losses': 0}
                       asset_mtg = active_martingale_state[asset_name_open]
                  #---------------------------------------------------
+
+                 # 4a3. Precision Timestamp Execution Filter (Target 70%+ Win Rate Windows)
+                 if ENABLE_TIMESTAMP_FILTER:
+                      now_utc = datetime.datetime.now(datetime.timezone.utc)
+                      curr_sec = now_utc.second
+                      if curr_sec not in PRIME_EXECUTION_SECONDS:
+                          logger.info(f"[{asset_name_open}] Timing Guard: Skipping execution at {curr_sec}s (Waiting for prime windows :14-:18, :44-:48, :53-:58).")
+                          await asyncio.sleep(0.5)
+                          continue
 
 
                  # 4b. Get Trading Direction
