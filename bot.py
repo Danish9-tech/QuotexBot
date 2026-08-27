@@ -2024,7 +2024,7 @@ async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size:
         amount_of_seconds = num_candles_needed * candle_size 
         try:
             candles = await asyncio.wait_for(
-                qx_client.get_historical_candles(asset_name, amount_of_seconds, candle_size),
+                qx_client.get_historical_candles(asset_name, candle_size, amount_of_seconds),
                 timeout=12.0
             )
         except asyncio.TimeoutError:
