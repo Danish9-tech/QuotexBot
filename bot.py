@@ -2346,12 +2346,13 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
 
                  # 4a2. Check Profit Payout Percentage
                  try:
-                      # Get payout for 1M timeframe as baseline
-                      payout = qx_client.get_payout_by_asset(asset_name_open, "1")
-                      if payout is not None and payout < MIN_PROFIT_PAYOUT:
-                          logger.warning(f"[{asset_name_open}] Skipping: Payout is too low ({payout}% - Must be {MIN_PROFIT_PAYOUT}%+ for profitability).")
-                          await asyncio.sleep(2)
-                          continue
+                      min_payout_setting = int(settings.get("min_payout", MIN_PROFIT_PAYOUT))
+                      if min_payout_setting > 0:
+                          payout = qx_client.get_payout_by_asset(asset_name_open, "1")
+                          if payout is not None and payout < min_payout_setting:
+                              logger.warning(f"[{asset_name_open}] Skipping: Payout is too low ({payout}% - Must be {min_payout_setting}%+ per settings).")
+                              await asyncio.sleep(0.5)
+                              continue
                  except Exception as e:
                       logger.warning(f"[{asset_name_open}] Could not fetch payout percentage: {e}")
 

@@ -199,7 +199,7 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                 else:
                     reason = f"QUANT PRO: Donchian Support + RSI ({rsi_14:.1f}) Oversold. Signal = BUY (CALL)."
                     logger.info(f"[{asset_name}] {reason}")
-                    return {"signal": "call", "confidence": 98, "reason": reason, "duration": candle_size}
+                    return {"signal": "call", "confidence": 98, "reason": reason, "duration": None}
 
             elif (is_touching_dc_upper or rsi_14 >= 62) and stoch_k >= 65:
                 if last_loss_direction == "put" and asset_recent_loss_count >= 2:
@@ -207,7 +207,7 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                 else:
                     reason = f"QUANT PRO: Donchian Resistance + RSI ({rsi_14:.1f}) Overbought. Signal = SELL (PUT)."
                     logger.info(f"[{asset_name}] {reason}")
-                    return {"signal": "put", "confidence": 98, "reason": reason, "duration": candle_size}
+                    return {"signal": "put", "confidence": 98, "reason": reason, "duration": None}
 
             # Rule 2: STRUCTURAL WICK REJECTION BOUNCE (>= 15% WICK) (95% Sureshot)
             elif (lower_wick_ratio >= 0.15 or is_gap_down) and rsi_14 < 58:
@@ -216,14 +216,14 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                 else:
                     reason = f"QUANT PRO: Buyer Wick Rejection ({lower_wick_ratio*100:.1f}%). Signal = BUY (CALL)."
                     logger.info(f"[{asset_name}] {reason}")
-                    return {"signal": "call", "confidence": 95, "reason": reason, "duration": candle_size}
+                    return {"signal": "call", "confidence": 95, "reason": reason, "duration": None}
             elif (upper_wick_ratio >= 0.15 or is_gap_up) and rsi_14 > 42:
                 if last_loss_direction == "put" and asset_recent_loss_count >= 2:
                     logger.warning(f"[{asset_name}] AI Loss Shield: Skipping PUT wick bounce due to 2+ consecutive PUT losses.")
                 else:
                     reason = f"QUANT PRO: Seller Wick Rejection ({upper_wick_ratio*100:.1f}%). Signal = SELL (PUT)."
                     logger.info(f"[{asset_name}] {reason}")
-                    return {"signal": "put", "confidence": 95, "reason": reason, "duration": candle_size}
+                    return {"signal": "put", "confidence": 95, "reason": reason, "duration": None}
 
             # Rule 3: DUAL EMA & TREND IMPULSE (90% Sureshot)
             elif is_uptrend and c_close > p_close and not is_sideways:
@@ -232,14 +232,14 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                 else:
                     reason = "QUANT PRO: Bullish Trend Impulse (Price > EMA20). Signal = BUY (CALL)."
                     logger.info(f"[{asset_name}] {reason}")
-                    return {"signal": "call", "confidence": 90, "reason": reason, "duration": candle_size}
+                    return {"signal": "call", "confidence": 90, "reason": reason, "duration": None}
             elif is_downtrend and c_close < p_close and not is_sideways:
                 if last_loss_direction == "put" and asset_recent_loss_count >= 2:
                     logger.warning(f"[{asset_name}] AI Loss Shield: Skipping PUT trend impulse due to 2+ consecutive PUT losses.")
                 else:
                     reason = "QUANT PRO: Bearish Trend Impulse (Price < EMA20). Signal = SELL (PUT)."
                     logger.info(f"[{asset_name}] {reason}")
-                    return {"signal": "put", "confidence": 90, "reason": reason, "duration": candle_size}
+                    return {"signal": "put", "confidence": 90, "reason": reason, "duration": None}
 
             else:
                 logger.info(f"[{asset_name}] Strategy suggests waiting (Doji).")
