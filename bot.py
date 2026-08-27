@@ -123,9 +123,9 @@ active_otp_requests: Dict[int, Dict[str, Any]] = {}
 user_states: Dict[int, str] = {} # e.g., {user_id: "waiting_broadcast_message"}
 
 DEFAULT_TRADE_AMOUNT = 1 # $1 default base trade amount
-DEFAULT_TRADE_DURATION = 15 # 15-second turbo trades by default (Higher win rate than 10s)
+DEFAULT_TRADE_DURATION = 10 # 10-second turbo trades by default
 DEFAULT_TRADE_MODE = "TIMER" # 'TIMER' or 'TIME'
-DEFAULT_CANDLE_SIZE = 15 # 15-second candles for higher stability
+DEFAULT_CANDLE_SIZE = 10 # 10-second candles for Sureshot strategy
 DEFAULT_SERVICE_STATUS = False # Trading Off by default
 
 MARTINGALE_MULTIPLIER = 2.2 # 2.2x multiplier to recover loss + yield profit on 1-step martingale
