@@ -2248,9 +2248,11 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
             if 'trade_history_db' in globals() and trade_history_db is not None:
                 try:
                     today_start = datetime.datetime.now(datetime.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+                    curr_mode = str(settings.get("account_mode", "PRACTICE"))
                     pipeline = [
                         {"$match": {
                             "account_doc_id": str(account_doc_id),
+                            "account_mode": curr_mode,
                             "timestamp": {"$gte": today_start}
                         }},
                         {"$group": {
@@ -2417,6 +2419,7 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                                now_utc = datetime.datetime.now(datetime.timezone.utc)
                                trade_record = {
                                    "account_doc_id": str(account_doc_id),
+                                   "account_mode": str(settings.get("account_mode", "PRACTICE")),
                                    "asset": asset_name_open,
                                    "ai_signal": direction,
                                    "ai_reason": ai_reason,
