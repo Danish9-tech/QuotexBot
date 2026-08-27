@@ -2096,9 +2096,8 @@ async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size:
         return None, "", None
     try:
         end_time = time.time()
-        offset_seconds = 0
-        num_candles_needed = 50
-        amount_of_seconds = num_candles_needed * candle_size 
+        num_candles_needed = 60
+        amount_of_seconds = max(3600, candle_size * num_candles_needed)
         try:
             candles = await asyncio.wait_for(
                 qx_client.get_candles(asset_name, time.time(), amount_of_seconds, candle_size, timeout=8),

@@ -145,7 +145,7 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
     """
     global CURRENT_KEY_INDEX
 
-    min_required_candles = 15
+    min_required_candles = 5
     if not candles or len(candles) < min_required_candles:
         logger.warning(f"[{asset_name}] Not enough candles for analysis (need at least {min_required_candles}, got {len(candles) if candles else 0}).")
         return {"signal": "doji", "confidence": 0, "reason": "Not enough data"}
