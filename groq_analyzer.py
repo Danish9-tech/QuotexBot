@@ -73,8 +73,9 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
             if len(df) < 10:
                 return {"signal": "doji", "confidence": 0, "reason": "Not enough candles for trend & pattern analysis"}
                 
-            # Calculate 20-period EMA, 100-period EMA & RSI 14 for Institutional Anti-Broker Analysis
+            # Calculate 20, 50, 100 EMAs
             df['EMA_20'] = df['close'].ewm(span=20, adjust=False).mean()
+            df['EMA_50'] = df['close'].ewm(span=min(50, len(df)), adjust=False).mean()
             df['EMA_100'] = df['close'].ewm(span=min(100, len(df)), adjust=False).mean()
             
             # Robust RSI 14 calculation with Exponential Moving Average (EWM)
@@ -83,7 +84,17 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
             loss = (-delta.where(delta < 0, 0.0)).ewm(alpha=1/14, adjust=False).mean()
             rs = gain / loss.replace(0, 1e-9)
             df['RSI_14'] = 100.0 - (100.0 / (1.0 + rs))
+
+            # Calculate Donchian Channel (Period 24)
+            df['DC_Upper'] = df['high'].rolling(window=min(24, len(df))).max()
+            df['DC_Lower'] = df['low'].rolling(window=min(24, len(df))).min()
+
+            # Calculate Stochastic Oscillator (5, 3, 3)
+            low_5 = df['low'].rolling(window=min(5, len(df))).min()
+            high_5 = df['high'].rolling(window=min(5, len(df))).max()
+            df['Stoch_K'] = 100.0 * ((df['close'] - low_5) / ((high_5 - low_5).replace(0, 1e-9)))
             
+            # Extract last candles AFTER all columns are calculated
             last_candle = df.iloc[-1]
             prev_candle = df.iloc[-2]
             prev_candle2 = df.iloc[-3] if len(df) >= 3 else prev_candle
@@ -108,11 +119,13 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
             lower_wick_ratio = lower_wick / total_range
             body_ratio = body_size / total_range
             
-            # Trend Check (EMA 20, EMA 100 & RSI 14)
+            # Trend Check (EMA 20, EMA 50, EMA 100 & RSI 14)
             ema_20 = float(last_candle['EMA_20']) if not pd.isna(last_candle.get('EMA_20')) else c_close
+            ema_50 = float(last_candle['EMA_50']) if not pd.isna(last_candle.get('EMA_50')) else c_close
             ema_100 = float(last_candle['EMA_100']) if not pd.isna(last_candle.get('EMA_100')) else c_close
             raw_rsi = last_candle.get('RSI_14', 50.0)
             rsi_14 = float(raw_rsi) if (pd.notna(raw_rsi) and 1.0 <= float(raw_rsi) <= 99.0) else 50.0
+            stoch_k = float(last_candle['Stoch_K']) if not pd.isna(last_candle.get('Stoch_K')) else 50.0
             
             is_uptrend = c_close >= ema_20
             is_downtrend = c_close < ema_20
@@ -122,17 +135,13 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
             recent_low = df['low'].tail(15).min()
             recent_range = recent_high - recent_low
             avg_bar_range = (df['high'] - df['low']).tail(15).mean()
-            is_sideways = (recent_range < (avg_bar_range * 2.0)) or (abs(c_close - ema_100) < total_range * 0.05 and abs(p_close - ema_100) < total_range * 0.05)
+            is_sideways = (recent_range < (avg_bar_range * 1.5))
             
             # Gap detection
             gap = c_open - p_close
             gap_threshold = max(0.000001, total_range * 0.15)
             is_gap_up = gap > gap_threshold
             is_gap_down = gap < -gap_threshold
-            
-            # Calculate Donchian Channel (Period 24)
-            df['DC_Upper'] = df['high'].rolling(window=min(24, len(df))).max()
-            df['DC_Lower'] = df['low'].rolling(window=min(24, len(df))).min()
             
             dc_upper = float(last_candle['DC_Upper']) if not pd.isna(last_candle.get('DC_Upper')) else c_high
             dc_lower = float(last_candle['DC_Lower']) if not pd.isna(last_candle.get('DC_Lower')) else c_low
@@ -155,7 +164,6 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
             if recent_trades:
                 for t in recent_trades:
                     if t.get('asset') == asset_name and (t.get('result') == 'LOSS' or t.get('profit_loss', 0) < 0):
-                        # ONLY count loss if it occurred within the last 3 minutes (180 seconds)
                         t_time = t.get('timestamp')
                         is_recent = False
                         if isinstance(t_time, (int, float)):
@@ -178,74 +186,64 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
 
             logger.info(f"[{asset_name}] AI Loss Memory (Last 3m): Recent Losses={asset_recent_loss_count}, Last Loss Direction={last_loss_direction}")
 
-            # Calculate Stochastic Oscillator (5, 3, 3)
-            low_5 = df['low'].rolling(window=min(5, len(df))).min()
-            high_5 = df['high'].rolling(window=min(5, len(df))).max()
-            df['Stoch_K'] = 100.0 * ((df['close'] - low_5) / ((high_5 - low_5).replace(0, 1e-9)))
-            stoch_k = float(last_candle['Stoch_K']) if not pd.isna(last_candle.get('Stoch_K')) else 50.0
-
-            # Calculate EMA 50
-            df['EMA_50'] = df['close'].ewm(span=min(50, len(df)), adjust=False).mean()
-            ema_50 = float(last_candle['EMA_50']) if not pd.isna(last_candle.get('EMA_50')) else c_close
-
             # Flat Doji Filter: Skip entry ONLY if current candle body has zero price movement
             if c_close == c_open and total_range < 0.0000001:
-                logger.info(f"[{asset_name}] Skipping 10s trade: Zero-range Doji candle.")
+                logger.info(f"[{asset_name}] Skipping trade: Zero-range Doji candle.")
                 return {"signal": "doji", "confidence": 0, "reason": "Zero-range Doji candle"}
 
-            # --- HIGH WIN-RATE 10S QUANT SURESHOT MATRIX ---
-            # Rule 1: TRIPLE EXTREME CONFLUENCE REVERSAL (98% Ultra Sureshot)
-            if (is_touching_dc_lower or rsi_14 <= 35) and stoch_k <= 30:
+            # --- HIGH WIN-RATE QUANT SURESHOT MATRIX ---
+            # Rule 1: TRIPLE EXTREME CONFLUENCE REVERSAL (98% Sureshot)
+            if (is_touching_dc_lower or rsi_14 <= 38) and stoch_k <= 35:
                 if last_loss_direction == "call" and asset_recent_loss_count >= 2:
                     logger.warning(f"[{asset_name}] AI Loss Shield: Skipping CALL reversal due to 2+ consecutive CALL losses.")
                 else:
-                    reason = f"QUANT PRO [10s]: Donchian Support + RSI ({rsi_14:.1f}) + Stoch ({stoch_k:.1f}) Double Oversold. Signal = BUY (CALL, 10s Expiry)."
+                    reason = f"QUANT PRO: Donchian Support + RSI ({rsi_14:.1f}) Oversold. Signal = BUY (CALL)."
                     logger.info(f"[{asset_name}] {reason}")
-                    return {"signal": "call", "confidence": 98, "reason": reason, "duration": 10}
+                    return {"signal": "call", "confidence": 98, "reason": reason, "duration": candle_size}
 
-            elif (is_touching_dc_upper or rsi_14 >= 65) and stoch_k >= 70:
+            elif (is_touching_dc_upper or rsi_14 >= 62) and stoch_k >= 65:
                 if last_loss_direction == "put" and asset_recent_loss_count >= 2:
                     logger.warning(f"[{asset_name}] AI Loss Shield: Skipping PUT reversal due to 2+ consecutive PUT losses.")
                 else:
-                    reason = f"QUANT PRO [10s]: Donchian Resistance + RSI ({rsi_14:.1f}) + Stoch ({stoch_k:.1f}) Double Overbought. Signal = SELL (PUT, 10s Expiry)."
+                    reason = f"QUANT PRO: Donchian Resistance + RSI ({rsi_14:.1f}) Overbought. Signal = SELL (PUT)."
                     logger.info(f"[{asset_name}] {reason}")
-                    return {"signal": "put", "confidence": 98, "reason": reason, "duration": 10}
+                    return {"signal": "put", "confidence": 98, "reason": reason, "duration": candle_size}
 
             # Rule 2: STRUCTURAL WICK REJECTION BOUNCE (>= 15% WICK) (95% Sureshot)
-            elif (lower_wick_ratio >= 0.15 or is_gap_down) and rsi_14 < 55:
+            elif (lower_wick_ratio >= 0.15 or is_gap_down) and rsi_14 < 58:
                 if last_loss_direction == "call" and asset_recent_loss_count >= 2:
                     logger.warning(f"[{asset_name}] AI Loss Shield: Skipping CALL wick bounce due to 2+ consecutive CALL losses.")
                 else:
-                    reason = f"QUANT PRO [10s]: Buyer Wick Rejection ({lower_wick_ratio*100:.1f}%). Signal = BUY (CALL, 10s Expiry)."
+                    reason = f"QUANT PRO: Buyer Wick Rejection ({lower_wick_ratio*100:.1f}%). Signal = BUY (CALL)."
                     logger.info(f"[{asset_name}] {reason}")
-                    return {"signal": "call", "confidence": 95, "reason": reason, "duration": 10}
-            elif (upper_wick_ratio >= 0.15 or is_gap_up) and rsi_14 > 45:
+                    return {"signal": "call", "confidence": 95, "reason": reason, "duration": candle_size}
+            elif (upper_wick_ratio >= 0.15 or is_gap_up) and rsi_14 > 42:
                 if last_loss_direction == "put" and asset_recent_loss_count >= 2:
                     logger.warning(f"[{asset_name}] AI Loss Shield: Skipping PUT wick bounce due to 2+ consecutive PUT losses.")
                 else:
-                    reason = f"QUANT PRO [10s]: Seller Wick Rejection ({upper_wick_ratio*100:.1f}%). Signal = SELL (PUT, 10s Expiry)."
+                    reason = f"QUANT PRO: Seller Wick Rejection ({upper_wick_ratio*100:.1f}%). Signal = SELL (PUT)."
                     logger.info(f"[{asset_name}] {reason}")
-                    return {"signal": "put", "confidence": 95, "reason": reason, "duration": 10}
+                    return {"signal": "put", "confidence": 95, "reason": reason, "duration": candle_size}
 
-            # Rule 3: DUAL EMA CONFLUENCE TREND IMPULSE (92% Sureshot)
-            elif (c_close > ema_20) and (ema_20 > ema_50):
+            # Rule 3: DUAL EMA & TREND IMPULSE (90% Sureshot)
+            elif is_uptrend and c_close > p_close and not is_sideways:
                 if last_loss_direction == "call" and asset_recent_loss_count >= 2:
                     logger.warning(f"[{asset_name}] AI Loss Shield: Skipping CALL trend impulse due to 2+ consecutive CALL losses.")
                 else:
-                    reason = "QUANT PRO [10s]: Strong Bullish Trend Impulse (Price > EMA20 > EMA50). Signal = BUY (CALL, 10s Expiry)."
+                    reason = "QUANT PRO: Bullish Trend Impulse (Price > EMA20). Signal = BUY (CALL)."
                     logger.info(f"[{asset_name}] {reason}")
-                    return {"signal": "call", "confidence": 92, "reason": reason, "duration": 10}
-            elif (c_close < ema_20) and (ema_20 < ema_50):
+                    return {"signal": "call", "confidence": 90, "reason": reason, "duration": candle_size}
+            elif is_downtrend and c_close < p_close and not is_sideways:
                 if last_loss_direction == "put" and asset_recent_loss_count >= 2:
                     logger.warning(f"[{asset_name}] AI Loss Shield: Skipping PUT trend impulse due to 2+ consecutive PUT losses.")
                 else:
-                    reason = "QUANT PRO [10s]: Strong Bearish Trend Impulse (Price < EMA20 < EMA50). Signal = SELL (PUT, 10s Expiry)."
+                    reason = "QUANT PRO: Bearish Trend Impulse (Price < EMA20). Signal = SELL (PUT)."
                     logger.info(f"[{asset_name}] {reason}")
-                    return {"signal": "put", "confidence": 92, "reason": reason, "duration": 10}
+                    return {"signal": "put", "confidence": 90, "reason": reason, "duration": candle_size}
 
             else:
-                logger.info(f"[{asset_name}] Skipping trade: Waiting for 92%+ Ultra Sureshot signal setup.")
-                return {"signal": "doji", "confidence": 0, "reason": "Waiting for 92%+ Ultra Sureshot signal setup"}
+                logger.info(f"[{asset_name}] Strategy suggests waiting (Doji).")
+                return {"signal": "doji", "confidence": 0, "reason": "Waiting for Sureshot signal setup"}
 
         # Calculate EMA 50
         df['EMA_50'] = df['close'].ewm(span=50, adjust=False).mean()
