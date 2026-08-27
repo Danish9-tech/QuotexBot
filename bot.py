@@ -124,7 +124,7 @@ user_states: Dict[int, str] = {} # e.g., {user_id: "waiting_broadcast_message"}
 
 DEFAULT_TRADE_AMOUNT = 1 # $1 default base trade amount
 DEFAULT_TRADE_DURATION = 10 # 10-second turbo trades by default
-DEFAULT_TRADE_MODE = "TIMER" # 'TIMER' or 'TIME'
+DEFAULT_TRADE_MODE = "TIME" # 'TIME' enables isFastOption=True in pyquotex for Turbo trades
 DEFAULT_CANDLE_SIZE = 10 # 10-second candles for Sureshot strategy
 DEFAULT_SERVICE_STATUS = False # Trading Off by default
 
@@ -2391,13 +2391,13 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
 
                  # 4c. Place the Trade
                  actual_duration = custom_dur if (custom_dur is not None and custom_dur > 0) else candle_size
-                 logger.info(f"[{asset_name_open}] Placing {direction.upper()} trade. Amount: {current_trade_amount}, Exp: {actual_duration}s, Mode: TIMER")
+                 logger.info(f"[{asset_name_open}] Placing {direction.upper()} trade. Amount: {current_trade_amount}, Exp: {actual_duration}s, Mode: TIME")
                  trade_placed_success = False
                  profit_or_loss_amount = 0
                  buy_error_reason = ""
                  try:
-                      # Strictly pass TIMER mode for exact turbo duration trade on Quotex
-                      status, buy_info = await qx_client.buy(current_trade_amount, asset_name_open, direction, actual_duration, "TIMER")
+                      # Strictly pass TIME mode so pyquotex activates isFastOption=True (Turbo Duration)
+                      status, buy_info = await qx_client.buy(current_trade_amount, asset_name_open, direction, actual_duration, "TIME")
 
                       if status:
                            trade_id = buy_info.get('id', 'N/A')
