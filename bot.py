@@ -128,9 +128,11 @@ DEFAULT_TRADE_MODE = "TIMER" # 'TIMER' or 'TIME'
 DEFAULT_CANDLE_SIZE = 10 # 10-second candles for Sureshot strategy
 DEFAULT_SERVICE_STATUS = False # Trading Off by default
 
-MARTINGALE_MULTIPLIER = 2.0
-MAX_CONSECUTIVE_LOSSES = 3
-COOLDOWN_MINUTES = 15
+MARTINGALE_MULTIPLIER = 2.2 # 2.2x multiplier to recover loss + yield profit on 1-step martingale
+MAX_CONSECUTIVE_LOSSES = 2 # 1-step Martingale (Max 2 trades: Base -> 2.2x -> Reset)
+COOLDOWN_MINUTES = 5
+DAILY_TARGET_PROFIT = 15.0 # Daily target profit in USD
+DAILY_STOP_LOSS = -10.0 # Daily max stop loss guard in USD
 
 # --- PROFIT OPTIMIZATION FILTERS ---
 TOXIC_ASSET_BLACKLIST = {"AUDNZD_otc", "USDARS_otc", "USDNGN_otc", "USDEGP_otc", "AUDNZD", "USDARS", "USDNGN", "USDEGP"}
@@ -2242,7 +2244,40 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                 await asyncio.sleep(10)
                 continue
 
-            # 4. --- Trading Cycle Start ---
+            # 4. --- Daily PnL Guard & Target Profit Check ---
+            if 'trade_history_db' in globals() and trade_history_db is not None:
+                try:
+                    today_start = datetime.datetime.now(datetime.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+                    pipeline = [
+                        {"$match": {
+                            "account_doc_id": str(account_doc_id),
+                            "timestamp": {"$gte": today_start}
+                        }},
+                        {"$group": {
+                            "_id": None,
+                            "total_pnl": {"$sum": "$profit"}
+                        }}
+                    ]
+                    agg_res = await trade_history_db.aggregate(pipeline).to_list(length=1)
+                    today_pnl = agg_res[0]["total_pnl"] if agg_res else 0.0
+
+                    if today_pnl >= DAILY_TARGET_PROFIT:
+                        logger.warning(f"[Trading Task {account_doc_id}]: DAILY TARGET PROFIT REACHED (+${today_pnl:.2f})! Stopping trading task for today.")
+                        await bot_instance.send_message(user_id, f"🎯 **Daily Target Profit Reached!** (+${today_pnl:.2f})\nTrading has been safely paused for today to secure your profits! 🎉")
+                        await update_trade_setting(account_doc_id, {"service_status": False})
+                        await stop_trading_task(account_doc_id)
+                        return
+
+                    if today_pnl <= DAILY_STOP_LOSS:
+                        logger.warning(f"[Trading Task {account_doc_id}]: DAILY STOP-LOSS TRIGGERED (-${abs(today_pnl):.2f})! Stopping trading task for today.")
+                        await bot_instance.send_message(user_id, f"🛑 **Daily Stop-Loss Guard Triggered!** (-${abs(today_pnl):.2f})\nTrading has been paused for today to protect your capital. 🛑")
+                        await update_trade_setting(account_doc_id, {"service_status": False})
+                        await stop_trading_task(account_doc_id)
+                        return
+                except Exception as pnl_err:
+                    logger.warning(f"[Trading Task {account_doc_id}] Daily PnL check error: {pnl_err}")
+
+            # 5. --- Trading Cycle Start ---
             logger.debug(f"[Trading Task {account_doc_id}]: Starting trade processing cycle...")
             active_cooldown_until = cooldown_until_db # Use local var for updates within the cycle
             active_martingale_state = martingale_state_db.copy() # Work with a copy for updates
@@ -2402,9 +2437,7 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                                 asset_mtg['current_amount'] = base_amount
                                 asset_mtg['consecutive_losses'] = 0
                                 await update_trade_setting(account_doc_id, {
-                                    f"martingale_state.{asset_name_open}.current_amount": asset_mtg['current_amount']
-                                })
-                                await update_trade_setting(account_doc_id, {
+                                    f"martingale_state.{asset_name_open}.current_amount": asset_mtg['current_amount'],
                                     f"martingale_state.{asset_name_open}.consecutive_losses": asset_mtg['consecutive_losses']
                                 })
                            else:
@@ -2416,23 +2449,19 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                                     logger.warning(f"[{asset_name_open}] Trade Result: LOSS! Lost: {abs(profit_or_loss_amount):.2f}")
                                     await bot_instance.send_message(user_id, f"❌ Trade Result: LOSS! Lost: {abs(profit_or_loss_amount):.2f}")
                                     asset_mtg['consecutive_losses'] += 1
-                                    await update_trade_setting(account_doc_id, {
-                                        f"martingale_state.{asset_name_open}.current_amount": asset_mtg['current_amount'],
-                                        f"martingale_state.{asset_name_open}.consecutive_losses": asset_mtg['consecutive_losses']
-                                    })
 
                                     if asset_mtg['consecutive_losses'] >= MAX_CONSECUTIVE_LOSSES:
                                          logger.warning(f"[{asset_name_open}] Max losses ({MAX_CONSECUTIVE_LOSSES}) reached. Activating {COOLDOWN_MINUTES} min cooldown.")
                                          active_cooldown_until = time.time() + (COOLDOWN_MINUTES * 60)
-                                         # Reset MTG state for the asset AFTER triggering cooldown
                                          asset_mtg['current_amount'] = base_amount
                                          asset_mtg['consecutive_losses'] = 0
-                                         await update_trade_setting(account_doc_id, {
-                                            f"martingale_state.{asset_name_open}.current_amount": asset_mtg['current_amount']
-                                        })
-                                         await update_trade_setting(account_doc_id, {
-                                            f"martingale_state.{asset_name_open}.consecutive_losses": asset_mtg['consecutive_losses']
-                                         })
+                                    else:
+                                         asset_mtg['current_amount'] = round(base_amount * MARTINGALE_MULTIPLIER, 2)
+
+                                    await update_trade_setting(account_doc_id, {
+                                        f"martingale_state.{asset_name_open}.current_amount": asset_mtg['current_amount'],
+                                        f"martingale_state.{asset_name_open}.consecutive_losses": asset_mtg['consecutive_losses']
+                                    })
 
                       else: # buy status = False
                            buy_error_reason = buy_info if isinstance(buy_info, str) else str(buy_info)

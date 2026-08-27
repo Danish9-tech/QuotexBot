@@ -243,25 +243,9 @@ async def get_groq_trading_signal(candles: list, asset_name: str, candle_size: i
                     logger.info(f"[{asset_name}] {reason}")
                     return {"signal": "put", "confidence": 92, "reason": reason, "duration": 10}
 
-            # Rule 4: TREND MOMENTUM CONTINUATION
-            elif is_uptrend:
-                if last_loss_direction == "call" and asset_recent_loss_count >= 2:
-                    logger.warning(f"[{asset_name}] AI Loss Shield: Skipping CALL trend momentum due to 2+ consecutive CALL losses.")
-                else:
-                    reason = f"QUANT PRO [10s]: Uptrend Momentum (Price >= EMA20 & RSI {rsi_14:.1f}). Signal = BUY (CALL, 10s Expiry)."
-                    logger.info(f"[{asset_name}] {reason}")
-                    return {"signal": "call", "confidence": 88, "reason": reason, "duration": 10}
-            elif is_downtrend:
-                if last_loss_direction == "put" and asset_recent_loss_count >= 2:
-                    logger.warning(f"[{asset_name}] AI Loss Shield: Skipping PUT trend momentum due to 2+ consecutive PUT losses.")
-                else:
-                    reason = f"QUANT PRO [10s]: Downtrend Momentum (Price < EMA20 & RSI {rsi_14:.1f}). Signal = SELL (PUT, 10s Expiry)."
-                    logger.info(f"[{asset_name}] {reason}")
-                    return {"signal": "put", "confidence": 88, "reason": reason, "duration": 10}
-
             else:
-                logger.info(f"[{asset_name}] Skipping 10s trade: Waiting for signal setup.")
-                return {"signal": "doji", "confidence": 0, "reason": "Waiting for signal setup"}
+                logger.info(f"[{asset_name}] Skipping trade: Waiting for 92%+ Ultra Sureshot signal setup.")
+                return {"signal": "doji", "confidence": 0, "reason": "Waiting for 92%+ Ultra Sureshot signal setup"}
 
         # Calculate EMA 50
         df['EMA_50'] = df['close'].ewm(span=50, adjust=False).mean()
