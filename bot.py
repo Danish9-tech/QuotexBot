@@ -2444,35 +2444,45 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                       asset_mtg = active_martingale_state[asset_name_open]
                  #---------------------------------------------------
 
-                 # 4a3. Candle Boundary Synchronization Guard
-                 # Wait for exact candle open boundary to prevent mid-candle entries
-                 now_ts = time.time()
-                 remainder = now_ts % candle_size
-                 if remainder > 1.5 and (candle_size - remainder) > 0.3:
-                      wait_time = candle_size - remainder
-                      logger.info(f"[{asset_name_open}] CANDLE SYNC: Waiting {wait_time:.2f}s for exact {candle_size}s candle open boundary...")
-                      await asyncio.sleep(wait_time)
+                 # 4b. Get Trading Direction First (0.3s scan)
+                 risk_mode_setting = settings.get("risk_mode", "SAFE")
+                 direction, ai_reason, custom_dur = await _get_candle_direction(qx_client, asset_name_open, candle_size, account_doc_id, risk_mode_setting)
+                 if direction is None:
+                      logger.warning(f"[{asset_name_open}] Skipping: Could not determine trade direction or fetch candles. Instantly moving to next asset.")
+                      await asyncio.sleep(0.2)
+                      continue
+                 if direction == 'doji':
+                      logger.info(f"[{asset_name_open}] Skipping: Strategy suggests waiting (Doji). Instantly moving to next asset.")
+                      await asyncio.sleep(0.2)
+                      continue
+
+                 logger.info(f"[{asset_name_open}] High-Conviction Signal Found: {direction.upper()}")
+
+                 # 4b2. Candle Boundary Synchronization Guard (with WS Keepalive)
+                 if settings.get("candle_sync", True):
+                      now_ts = time.time()
+                      remainder = now_ts % candle_size
+                      if remainder > 2.0 and (candle_size - remainder) > 0.5:
+                          wait_time = candle_size - remainder
+                          logger.info(f"[{asset_name_open}] CANDLE SYNC: Waiting {wait_time:.2f}s for exact {candle_size}s candle open boundary...")
+                          # Sleep in small chunks while maintaining active WebSocket keepalive ping
+                          stop_wait = time.time() + wait_time
+                          while time.time() < stop_wait:
+                              sleep_chunk = min(1.0, stop_wait - time.time())
+                              if sleep_chunk > 0:
+                                  await asyncio.sleep(sleep_chunk)
+                                  try:
+                                      await qx_client.check_connect()
+                                  except Exception:
+                                      pass
 
                  if ENABLE_TIMESTAMP_FILTER:
                       now_utc = datetime.datetime.now(datetime.timezone.utc)
                       curr_sec = now_utc.second
                       if curr_sec not in PRIME_EXECUTION_SECONDS:
-                          logger.info(f"[{asset_name_open}] Timing Guard: Skipping execution at {curr_sec}s (Waiting for prime windows :14-:18, :44-:48, :53-:58).")
+                          logger.info(f"[{asset_name_open}] Timing Guard: Skipping execution at {curr_sec}s (Waiting for prime windows).")
                           await asyncio.sleep(0.5)
                           continue
-
-                 # 4b. Get Trading Direction
-                 risk_mode_setting = settings.get("risk_mode", "SAFE")
-                 direction, ai_reason, custom_dur = await _get_candle_direction(qx_client, asset_name_open, candle_size, account_doc_id, risk_mode_setting)
-                 if direction is None:
-                      logger.warning(f"[{asset_name_open}] Skipping: Could not determine trade direction or fetch candles. Instantly moving to next asset.")
-                      await asyncio.sleep(0.5)
-                      continue
-                 if direction == 'doji':
-                      logger.info(f"[{asset_name_open}] Skipping: Strategy suggests waiting (Doji). Instantly moving to next asset.")
-                      await asyncio.sleep(0.5)
-                      continue
-                 logger.info(f"[{asset_name_open}] Trade Direction Signal: {direction.upper()}")
 
                  # 4c. Place the Trade
                  actual_duration = custom_dur if (custom_dur is not None and custom_dur > 0) else candle_size
