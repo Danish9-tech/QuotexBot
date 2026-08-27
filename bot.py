@@ -2020,7 +2020,7 @@ async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size:
         # Wait, get_candles parameter order: asset_name, end_time, offset_seconds, amount
         # Wait! Is it amount or size? In the original code it says `candle_size`. Let's assume it passes the number of candles requested.
         # Fetch 50 candles worth of seconds for 5s trades (250s) to prevent WebSocket batch timeouts
-        num_candles_needed = 35 if candle_size <= 5 else 45
+        num_candles_needed = 50
         amount_of_seconds = num_candles_needed * candle_size 
         try:
             candles = await asyncio.wait_for(
