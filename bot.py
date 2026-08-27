@@ -2020,15 +2020,15 @@ async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size:
         # Wait, get_candles parameter order: asset_name, end_time, offset_seconds, amount
         # Wait! Is it amount or size? In the original code it says `candle_size`. Let's assume it passes the number of candles requested.
         # Fetch 50 candles worth of seconds for 5s trades (250s) to prevent WebSocket batch timeouts
-        num_candles_needed = 30 if candle_size <= 5 else 40
+        num_candles_needed = 35 if candle_size <= 5 else 45
         amount_of_seconds = num_candles_needed * candle_size 
         try:
             candles = await asyncio.wait_for(
-                qx_client.get_historical_candles(asset_name, candle_size, amount_of_seconds),
-                timeout=12.0
+                qx_client.get_candles(asset_name, time.time(), amount_of_seconds, candle_size, timeout=8),
+                timeout=10.0
             )
         except asyncio.TimeoutError:
-            logger.warning(f"[{asset_name}] Candle fetch timed out (12.0s limit). Checking connection status...")
+            logger.warning(f"[{asset_name}] Candle fetch timed out (10.0s limit). Checking connection status...")
             is_connected = False
             try:
                 is_connected = await qx_client.check_connect()
