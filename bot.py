@@ -742,6 +742,10 @@ def account_management_keyboard(account_doc_id: str, settings: Dict) -> InlineKe
     trading_status = "ON" if settings.get('service_status', False) else "OFF"
     toggle_trading_text = f"🔴 Stop Trading" if trading_status == "ON" else f"🟢 Start Trading"
 
+    csync_status = "ON 🎯" if settings.get('candle_sync', True) else "OFF ⚡"
+    risk_mode = settings.get('risk_mode', 'SAFE')
+    min_payout = settings.get('min_payout', MIN_PROFIT_PAYOUT)
+
     keyboard = [
          [
             InlineKeyboardButton("📊 Get Profile", callback_data=f"qx_profile:{account_doc_id}"),
@@ -757,6 +761,11 @@ def account_management_keyboard(account_doc_id: str, settings: Dict) -> InlineKe
         ],
         [
              InlineKeyboardButton(f"💵 Amount: ${settings.get('trade_amount', DEFAULT_TRADE_AMOUNT)}", callback_data=f"set_amount:{account_doc_id}"),
+             InlineKeyboardButton(f"📈 Payout: {min_payout}%+", callback_data=f"set_payout:{account_doc_id}"),
+        ],
+        [
+             InlineKeyboardButton(f"🛡️ Risk: {risk_mode}", callback_data=f"set_risk:{account_doc_id}"),
+             InlineKeyboardButton(f"Sync: {csync_status}", callback_data=f"toggle_csync:{account_doc_id}"),
         ],
         [
              InlineKeyboardButton(toggle_trading_text, callback_data=f"toggle_trade:{account_doc_id}"),
@@ -1269,6 +1278,79 @@ async def callback_query_handler(client: Client, callback_query: CallbackQuery):
             "Please reply with your desired trade amount in USD (e.g., `1`, `2.5`, `10`).\n"
             "Send /cancel to abort.",
             reply_markup=ForceReply(selective=True)
+        )
+
+    elif data.startswith("set_payout:"):
+        account_doc_id = data.split(":")[1]
+        settings = await get_or_create_trade_settings(account_doc_id)
+        curr_payout = settings.get('min_payout', MIN_PROFIT_PAYOUT)
+        keyboard = [
+            [
+                InlineKeyboardButton(f"{'✅ ' if curr_payout == 70 else ''}70%+", callback_data=f"payout_set:{account_doc_id}:70"),
+                InlineKeyboardButton(f"{'✅ ' if curr_payout == 75 else ''}75%+", callback_data=f"payout_set:{account_doc_id}:75"),
+                InlineKeyboardButton(f"{'✅ ' if curr_payout == 80 else ''}80%+", callback_data=f"payout_set:{account_doc_id}:80"),
+            ],
+            [
+                InlineKeyboardButton(f"{'✅ ' if curr_payout == 85 else ''}85%+", callback_data=f"payout_set:{account_doc_id}:85"),
+                InlineKeyboardButton(f"{'✅ ' if curr_payout == 90 else ''}90%+", callback_data=f"payout_set:{account_doc_id}:90"),
+            ],
+            back_button(f"qx_manage:{account_doc_id}")
+        ]
+        await message.edit_text(f"Select **Minimum Payout Filter**:\nCurrent Minimum Payout: `{curr_payout}%+`", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data.startswith("payout_set:"):
+        parts = data.split(":")
+        account_doc_id, new_payout = parts[1], int(parts[2])
+        await update_trade_setting(account_doc_id, {"min_payout": new_payout})
+        await callback_query.answer(f"Minimum Payout filter set to {new_payout}%+")
+        account_details = await get_quotex_account_details(account_doc_id)
+        settings = await get_or_create_trade_settings(account_doc_id)
+        await message.edit_text(
+            f"Managing account: **{account_details['email']}**\nMinimum payout updated to **{new_payout}%+**.",
+            reply_markup=account_management_keyboard(account_doc_id, settings)
+        )
+
+    elif data.startswith("set_risk:"):
+        account_doc_id = data.split(":")[1]
+        settings = await get_or_create_trade_settings(account_doc_id)
+        curr_risk = settings.get('risk_mode', 'SAFE')
+        keyboard = [
+            [
+                InlineKeyboardButton(f"{'✅ ' if curr_risk == 'SAFE' else ''}SAFE 🛡️ (85%+ Winrate, 4+ Confluences)", callback_data=f"risk_set:{account_doc_id}:SAFE"),
+            ],
+            [
+                InlineKeyboardButton(f"{'✅ ' if curr_risk == 'AGGRESSIVE' else ''}AGGRESSIVE ⚡ (More Trades, 2+ Confluences)", callback_data=f"risk_set:{account_doc_id}:AGGRESSIVE"),
+            ],
+            back_button(f"qx_manage:{account_doc_id}")
+        ]
+        await message.edit_text(f"Select **AI Risk Mode** for **{settings.get('email','N/A')}**:\nCurrent Mode: `{curr_risk}`", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data.startswith("risk_set:"):
+        parts = data.split(":")
+        account_doc_id, new_risk = parts[1], parts[2]
+        if new_risk in ["SAFE", "AGGRESSIVE"]:
+            await update_trade_setting(account_doc_id, {"risk_mode": new_risk})
+            await callback_query.answer(f"Risk mode set to {new_risk}")
+            account_details = await get_quotex_account_details(account_doc_id)
+            settings = await get_or_create_trade_settings(account_doc_id)
+            await message.edit_text(
+                f"Managing account: **{account_details['email']}**\nAI Risk mode updated to **{new_risk}**.",
+                reply_markup=account_management_keyboard(account_doc_id, settings)
+            )
+
+    elif data.startswith("toggle_csync:"):
+        account_doc_id = data.split(":")[1]
+        settings = await get_or_create_trade_settings(account_doc_id)
+        curr_csync = settings.get('candle_sync', True)
+        new_csync = not curr_csync
+        await update_trade_setting(account_doc_id, {"candle_sync": new_csync})
+        status_text = "ENABLED (Wait for Candle Open)" if new_csync else "DISABLED (Instant Execution)"
+        await callback_query.answer(f"Candle Sync {status_text}")
+        account_details = await get_quotex_account_details(account_doc_id)
+        settings = await get_or_create_trade_settings(account_doc_id)
+        await message.edit_text(
+            f"Managing account: **{account_details['email']}**\nCandle Sync guard is now **{status_text}**.",
+            reply_markup=account_management_keyboard(account_doc_id, settings)
         )
 
 
@@ -2004,22 +2086,17 @@ active_trading_tasks: Dict[str, asyncio.Task] = {} # {account_doc_id: task_insta
 
 # --- REPLACE THE EXISTING run_trading_loop_for_account FUNCTION ---
 
-async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size: int, account_doc_id: str) -> Tuple[Optional[str], str]:
+async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size: int, account_doc_id: str, risk_mode: str = "SAFE") -> Tuple[Optional[str], str, Optional[int]]:
     """
     Fetches candles and uses Groq AI to determine direction.
     """
     global active_quotex_clients
     if not qx_client or not qx_client.check_connect:
         logger.warning(f"[{asset_name}] QX client not connected in _get_candle_direction.")
-        return None, ""
+        return None, "", None
     try:
         end_time = time.time()
         offset_seconds = 0
-        # Request 60 candles to ensure enough data for TA-Lib indicators (EMA 50 needs 50)
-        # Using 60 to have a small buffer
-        # Wait, get_candles parameter order: asset_name, end_time, offset_seconds, amount
-        # Wait! Is it amount or size? In the original code it says `candle_size`. Let's assume it passes the number of candles requested.
-        # Fetch 50 candles worth of seconds for 5s trades (250s) to prevent WebSocket batch timeouts
         num_candles_needed = 50
         amount_of_seconds = num_candles_needed * candle_size 
         try:
@@ -2043,7 +2120,6 @@ async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size:
             return None, "TIMEOUT", None 
 
         if candles and isinstance(candles, list) and len(candles) > 0:
-            # Cap candle list to latest 100 to prevent Linux Kernel Out-Of-Memory (OOM) RAM crashes
             candles = candles[-100:]
             
             # Fetch recent trade history for AI Memory asynchronously in parallel
@@ -2082,7 +2158,7 @@ async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size:
                     logger.warning(f"[{asset_name}] Quick DB query skip: {db_q_err}")
 
             # Calculate signal locally (1ms execution)
-            ai_result = await get_groq_trading_signal(candles, asset_name, candle_size, recent_trades)
+            ai_result = await get_groq_trading_signal(candles, asset_name, candle_size, recent_trades, risk_mode)
             
             signal = ai_result.get("signal", "doji")
             confidence = ai_result.get("confidence", 0)
@@ -2345,11 +2421,13 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                       continue
 
                  # 4a2. Check Profit Payout Percentage
+                 current_payout = 0
                  try:
                       min_payout_setting = int(settings.get("min_payout", MIN_PROFIT_PAYOUT))
-                      if min_payout_setting > 0:
-                          payout = qx_client.get_payout_by_asset(asset_name_open, "1")
-                          if payout is not None and payout < min_payout_setting:
+                      payout = qx_client.get_payout_by_asset(asset_name_open, "1")
+                      if payout is not None:
+                          current_payout = payout
+                          if min_payout_setting > 0 and payout < min_payout_setting:
                               logger.warning(f"[{asset_name_open}] Skipping: Payout is too low ({payout}% - Must be {min_payout_setting}%+ per settings).")
                               await asyncio.sleep(0.5)
                               continue
@@ -2367,7 +2445,15 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                       asset_mtg = active_martingale_state[asset_name_open]
                  #---------------------------------------------------
 
-                 # 4a3. Precision Timestamp Execution Filter (Target 70%+ Win Rate Windows)
+                 # 4a3. Candle Boundary Synchronization Guard
+                 # Wait for exact candle open boundary to prevent mid-candle entries
+                 now_ts = time.time()
+                 remainder = now_ts % candle_size
+                 if remainder > 1.5 and (candle_size - remainder) > 0.3:
+                      wait_time = candle_size - remainder
+                      logger.info(f"[{asset_name_open}] CANDLE SYNC: Waiting {wait_time:.2f}s for exact {candle_size}s candle open boundary...")
+                      await asyncio.sleep(wait_time)
+
                  if ENABLE_TIMESTAMP_FILTER:
                       now_utc = datetime.datetime.now(datetime.timezone.utc)
                       curr_sec = now_utc.second
@@ -2376,9 +2462,9 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                           await asyncio.sleep(0.5)
                           continue
 
-
                  # 4b. Get Trading Direction
-                 direction, ai_reason, custom_dur = await _get_candle_direction(qx_client, asset_name_open, candle_size, account_doc_id)
+                 risk_mode_setting = settings.get("risk_mode", "SAFE")
+                 direction, ai_reason, custom_dur = await _get_candle_direction(qx_client, asset_name_open, candle_size, account_doc_id, risk_mode_setting)
                  if direction is None:
                       logger.warning(f"[{asset_name_open}] Skipping: Could not determine trade direction or fetch candles. Instantly moving to next asset.")
                       await asyncio.sleep(0.5)
@@ -2388,7 +2474,6 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                       await asyncio.sleep(0.5)
                       continue
                  logger.info(f"[{asset_name_open}] Trade Direction Signal: {direction.upper()}")
-
 
                  # 4c. Place the Trade
                  actual_duration = custom_dur if (custom_dur is not None and custom_dur > 0) else candle_size
@@ -2432,9 +2517,11 @@ async def run_trading_loop_for_account(user_id: int, account_doc_id: str):
                                    "asset": asset_name_open,
                                    "ai_signal": direction,
                                    "ai_reason": ai_reason,
+                                   "payout": current_payout,
                                    "result": "WIN" if win_result else ("TIE" if profit_or_loss_amount == 0 else "LOSS"),
                                    "profit": profit_or_loss_amount,
                                    "amount": current_trade_amount,
+                                   "candle_size": candle_size,
                                    "utc_hour": now_utc.hour,
                                    "utc_day": now_utc.strftime("%A"),
                                    "timestamp": now_utc
