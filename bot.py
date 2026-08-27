@@ -2028,7 +2028,18 @@ async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size:
                 timeout=12.0
             )
         except asyncio.TimeoutError:
-            logger.warning(f"[{asset_name}] Candle fetch timed out (12.0s limit). Retrying on next asset without killing WebSocket.")
+            logger.warning(f"[{asset_name}] Candle fetch timed out (12.0s limit). Checking connection status...")
+            is_connected = False
+            try:
+                is_connected = await qx_client.check_connect()
+            except Exception:
+                pass
+
+            if not is_connected:
+                logger.warning(f"[{asset_name}] WebSocket NetworkTask stopped/disconnected. Evicting dead client to trigger auto-reconnect.")
+                if account_doc_id in active_quotex_clients:
+                    try: del active_quotex_clients[account_doc_id]
+                    except: pass
             return None, "TIMEOUT", None 
 
         if candles and isinstance(candles, list) and len(candles) > 0:
