@@ -30,4 +30,4 @@ EXPOSE 7860
 ENV PYTHONUNBUFFERED=1
 
 # Start everything. Make bot.py run in foreground so if it crashes, the container logs it.
-CMD ["sh", "-c", "gunicorn app:app --bind 0.0.0.0:7860 & python ping.py & python bot.py"]
+CMD ["sh", "-c", "gunicorn app:app --bind 0.0.0.0:7860 & python ping.py & python bot.py & python dashboard_runner.py"]
