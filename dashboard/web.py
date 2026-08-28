@@ -397,7 +397,12 @@ async function fetchJSON(url, opts = {}) {
   if (TOKEN) headers["X-Dashboard-Token"] = TOKEN;
   const r = await fetch(url, { ...opts, headers });
   if (!r.ok) {
-    if (r.status === 401) throw new Error("bad token");
+    if (r.status === 401) {
+      // Stale or wrong token — drop it so the next action re-prompts
+      sessionStorage.removeItem("dashboard_token");
+      window.TOKEN = "";
+      throw new Error("bad token");
+    }
     throw new Error("HTTP " + r.status);
   }
   return await r.json();
@@ -594,15 +599,21 @@ async function fetchTrades() {
 
 async function postKillSwitch(action) {
   if (!ensureToken()) return;
+  const errEl = document.getElementById("error");
+  errEl.innerHTML = "";
   try {
     const r = await fetchJSON("/api/kill_switch/" + action, { method: "POST" });
     if (r.ok) {
       await refresh();
     } else {
-      alert("Failed: " + JSON.stringify(r));
+      errEl.innerHTML = `<div class="err">Failed: ${escHtml(JSON.stringify(r))}</div>`;
     }
   } catch (e) {
-    alert("Error: " + e.message);
+    if (e.message === "bad token") {
+      errEl.innerHTML = `<div class="err">Bad token. Click again and re-enter the X-Dashboard-Token from your .env.</div>`;
+    } else {
+      errEl.innerHTML = `<div class="err">Error: ${escHtml(e.message)}</div>`;
+    }
   }
 }
 
