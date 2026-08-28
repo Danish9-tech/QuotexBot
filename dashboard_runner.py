@@ -1,14 +1,16 @@
 """
 Background runner for the verification dashboard.
 
-Mirrors ping.py: a single long-running process that does periodic work
-(MongoDB checks + Telegram status pings + auto kill-switch). Runs alongside
-bot.py and ping.py; started by Dockerfile / setup_systemd.sh.
+Read-only monitor. Every CHECK_INTERVAL seconds, computes the dashboard metrics
+from MongoDB and logs the result. Does NOT auto-pause the bot, does NOT send
+Telegram messages. Pause/resume is manual via the dashboard web UI.
+
+Mirrors ping.py in spirit: a single long-running process alongside bot.py.
+Started by Dockerfile / setup_systemd.sh.
 
 Usage:
   python dashboard_runner.py            # run forever
-  python dashboard_runner.py --once     # run a single check, then exit
-                                       # (used by the smoke test)
+  python dashboard_runner.py --once     # single check, then exit (smoke test)
 """
 
 import os
@@ -16,7 +18,6 @@ import sys
 import asyncio
 import signal
 import logging
-from datetime import datetime, timezone
 
 import motor.motor_asyncio
 from dotenv import load_dotenv
@@ -33,8 +34,6 @@ logger = logging.getLogger("dashboard.runner")
 MONGO_URI = os.getenv("MONGO_URI", "")
 
 CHECK_INTERVAL = int(os.getenv("DASHBOARD_CHECK_INTERVAL", "60"))
-TELEGRAM_INTERVAL = int(os.getenv("DASHBOARD_TELEGRAM_INTERVAL", "900"))
-TELEGRAM_ENABLED = os.getenv("DASHBOARD_TELEGRAM_ENABLED", "true").lower() in ("1", "true", "yes")
 
 
 _running = True
@@ -55,48 +54,24 @@ def _install_signal_handlers(loop: asyncio.AbstractEventLoop):
 
 async def run_check_once(db) -> dict:
     """
-    One iteration: build metrics, evaluate kill switch, act on it,
-    optionally send a Telegram status ping.
-    Returns the kill-switch state dict.
+    One iteration: build metrics, evaluate kill switch thresholds (read-only),
+    log if thresholds are tripped. The auto kill-switch write and Telegram
+    alerts are intentionally disabled — pause/resume is manual via the dashboard.
     """
     snapshot = await metrics.build_full_metrics(db)
     state = alerts.evaluate_kill_switch(snapshot)
 
     if state["triggered"]:
-        n = await alerts.write_kill_switch(db, service_status=False)
-        logger.warning(
-            f"KILL SWITCH TRIGGERED — flipped {n} account(s) to service_status=False. "
+        # Informational only — does not write to trade_settings.
+        # The user can manually click Pause on the dashboard.
+        logger.info(
+            f"thresholds tripped (no action taken — manual mode). "
             f"Reasons: {state['reasons']}"
         )
-        msg = alerts.format_kill_switch_alert(state, snapshot)
-        if TELEGRAM_ENABLED:
-            sent = await alerts.send_telegram_message(msg)
-            if sent:
-                logger.info("Kill-switch alert sent to Telegram")
     else:
-        # Only log at debug to avoid spam
-        logger.debug("Kill switch armed — all thresholds within range")
+        logger.debug("thresholds within range")
 
     return {"snapshot": snapshot, "state": state}
-
-
-async def maybe_telegram_ping(db, last_ping_at: datetime | None) -> datetime:
-    """
-    Send a status ping to Telegram at most every TELEGRAM_INTERVAL seconds.
-    Returns the new last_ping_at.
-    """
-    if not TELEGRAM_ENABLED:
-        return last_ping_at
-    now = datetime.now(timezone.utc)
-    if last_ping_at is None or (now - last_ping_at).total_seconds() >= TELEGRAM_INTERVAL:
-        snapshot = await metrics.build_full_metrics(db)
-        state = alerts.evaluate_kill_switch(snapshot)
-        msg = alerts.format_status_message(snapshot, state)
-        sent = await alerts.send_telegram_message(msg)
-        if sent:
-            logger.info("Telegram status ping sent")
-            return now
-    return last_ping_at
 
 
 async def main_async():
@@ -133,15 +108,12 @@ async def main_async():
     loop = asyncio.get_running_loop()
     _install_signal_handlers(loop)
     logger.info(
-        f"dashboard runner started — check every {CHECK_INTERVAL}s, "
-        f"Telegram every {TELEGRAM_INTERVAL}s, enabled={TELEGRAM_ENABLED}"
+        f"dashboard runner started — read-only monitor, check every {CHECK_INTERVAL}s"
     )
 
-    last_ping_at: datetime | None = None
     while _running:
         try:
             await run_check_once(db)
-            last_ping_at = await maybe_telegram_ping(db, last_ping_at)
         except Exception as e:
             logger.exception(f"check loop error: {e}")
 

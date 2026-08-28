@@ -1,21 +1,21 @@
 """
-Telegram alerts + kill-switch logic for the dashboard.
+Dashboard alert formatting + kill-switch threshold logic.
 
-The kill switch is *polite* — it writes `service_status: False` to every `trade_settings`
-doc in MongoDB. The live bot's existing `run_trading_loop_for_account` already checks this
-field on every asset iteration (see bot.py:2352-2363) and stops itself. We don't import
-anything from bot.py; we just write the same MongoDB state the bot already reads.
+The auto kill switch and Telegram pings are disabled. The runner no longer
+writes to `trade_settings`. Pause/resume is manual via the dashboard web UI
+(POST /api/kill_switch/pause and /resume), which still flip service_status.
+
+This module is kept for:
+- evaluate_kill_switch(): read-only threshold check used by the dashboard
+- send_telegram_message(): still wired up if you re-enable alerts
+- format_status_message / format_kill_switch_alert: still useful for ad-hoc sends
 """
 
 import os
-import asyncio
 import logging
-from typing import Any
 
 import aiohttp
 from dotenv import load_dotenv
-
-from . import metrics
 
 load_dotenv()
 logger = logging.getLogger("dashboard.alerts")
@@ -32,7 +32,11 @@ KILL_STREAK_N = int(os.getenv("KILL_STREAK_N", "10"))
 
 def evaluate_kill_switch(metrics_snapshot: dict) -> dict:
     """
-    Decide whether the kill switch should fire. Pure function — no I/O.
+    Evaluate kill-switch thresholds against the live metrics. Pure function — no I/O.
+
+    The runner no longer auto-pauses the bot. This function still computes the
+    thresholds so the dashboard can show them as informational indicators, but
+    nothing happens automatically. Pause/resume is manual via the dashboard.
 
     Returns: {triggered: bool, reasons: list[str], values: dict}
     """

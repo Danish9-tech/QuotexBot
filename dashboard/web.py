@@ -260,12 +260,12 @@ _DASHBOARD_HTML = r"""<!doctype html>
 
   <div id="banner" class="banner armed">
     <div>
-      <div id="banner-title">ARMED — checking…</div>
+      <div id="banner-title">📊 Monitor mode — loading…</div>
       <div id="banner-reasons" class="reasons"></div>
     </div>
     <div>
-      <button class="btn danger" id="btn-pause">⏸ Pause bot</button>
-      <button class="btn success" id="btn-resume">▶ Resume bot</button>
+      <button class="btn danger" id="btn-pause">⏸ Pause bot (manual)</button>
+      <button class="btn success" id="btn-resume">▶ Resume bot (manual)</button>
     </div>
   </div>
 
@@ -353,8 +353,10 @@ _DASHBOARD_HTML = r"""<!doctype html>
   </div>
 
   <div class="footer">
-    Built from <code>trade_history</code> + <code>trade_settings</code> in MongoDB.
-    Kill switch flips <code>service_status</code> on <code>trade_settings</code>;
+    Read-only monitor built from <code>trade_history</code> + <code>trade_settings</code> in MongoDB.
+    Auto kill switch and Telegram alerts are disabled.
+    Use the buttons above to <strong>manually</strong> pause or resume the bot — clicking
+    Pause flips <code>service_status</code> on every <code>trade_settings</code> doc, and
     bot.py picks it up on its next asset iteration.
     Breakeven is 54.05% at an 85% payout. Inversion test: if "inv" ≈ "orig",
     the strategy is a coin flip and no indicator tweak will fix that.
@@ -561,13 +563,15 @@ function renderKillState(s) {
   const banner = document.getElementById("banner");
   const title = document.getElementById("banner-title");
   const reasonsEl = document.getElementById("banner-reasons");
+  // Read-only monitor: the runner does not auto-pause. Banner is informational.
   if (s.triggered) {
     banner.className = "banner triggered";
-    title.textContent = "🛑 KILL SWITCH TRIGGERED — bot paused";
-    reasonsEl.innerHTML = (s.reasons || []).map(r => "• " + escHtml(r)).join("<br>");
+    title.textContent = "📊 Monitor mode — thresholds currently tripped (no action taken)";
+    reasonsEl.innerHTML = (s.reasons || []).map(r => "• " + escHtml(r)).join("<br>")
+      + "<br><span class=\"muted\">Bot is still trading. Click Pause to stop it manually.</span>";
   } else {
     banner.className = "banner armed";
-    title.textContent = "✅ ARMED — bot live, all thresholds within range";
+    title.textContent = "📊 Monitor mode — all thresholds within range";
     reasonsEl.textContent = "";
   }
 }
