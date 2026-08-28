@@ -2189,6 +2189,9 @@ async def _get_candle_direction(qx_client: Quotex, asset_name: str, candle_size:
                 return 'doji', reason, None
         else:
             logger.warning(f"[{asset_name}] No candle data received or empty list.")
+            if account_doc_id in active_quotex_clients:
+                logger.error(f"[{asset_name}] Candle fetch timed out or empty. Purging client cache for {account_doc_id} to force fresh reconnect.")
+                del active_quotex_clients[account_doc_id]
             return None, "", None
     except Exception as e:
         logger.error(f"[{asset_name}] Error fetching candle data or calling AI: {e}", exc_info=True)
