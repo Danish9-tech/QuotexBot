@@ -665,6 +665,9 @@ async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type:
                         logger.info(f"Fresh login successful for {email} after clearing stale session.")
                         active_quotex_clients[account_doc_id] = qx_client_fresh
                         return qx_client_fresh, "Connected successfully after fresh re-authentication."
+                    else:
+                        connection_reason = conn_reason2
+                        reason_str = str(conn_reason2) if conn_reason2 else "Fresh login failed"
                 except Exception as fresh_err:
                     logger.warning(f"Fresh login retry failed: {fresh_err}")
 
