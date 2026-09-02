@@ -638,29 +638,45 @@ async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type:
                 except: pass
             
             # ... (Failure logic: check reasons, handle Invalid credentials, Token rejected, PIN/Auth errors) ...
-            logger.error(f"Quotex connection explicitly failed for {email}. Reason: {connection_reason}")
             reason_str = str(connection_reason) if connection_reason else "Unknown reason"
-            
             # If authorization was rejected by Quotex, delete stale Quotex json session files so a fresh login is performed
             if any(term in reason_str.lower() for term in ["rejected", "token", "authorization"]):
-                logger.warning("Session token rejected by Quotex. Cleaning up stale Quotex session files for fresh login...")
+                logger.warning("Session token rejected by Quotex. Cleaning up stale Quotex session files and attempting fresh email login...")
                 try:
                     for s_file in Path(".").glob("session*.json"):
                         s_file.unlink(missing_ok=True)
                     for s_file in Path(".").glob("qx_session*.json"):
                         s_file.unlink(missing_ok=True)
+                    for s_file in Path(".").glob(f"*{email}*"):
+                        s_file.unlink(missing_ok=True)
                 except Exception as clean_err:
                     logger.warning(f"Could not clean session files: {clean_err}")
+
+                # Retry fresh login attempt once after clearing session cache
+                try:
+                    qx_client_fresh = Quotex(
+                        email=email, 
+                        password=password, 
+                        host=host_attempt,
+                        on_otp_callback=handle_potential_pin_input
+                    )
+                    conn_check2, conn_reason2 = await asyncio.wait_for(qx_client_fresh.connect(), timeout=120.0)
+                    if conn_check2:
+                        logger.info(f"Fresh login successful for {email} after clearing stale session.")
+                        active_quotex_clients[account_doc_id] = qx_client_fresh
+                        return qx_client_fresh, "Connected successfully after fresh re-authentication."
+                except Exception as fresh_err:
+                    logger.warning(f"Fresh login retry failed: {fresh_err}")
 
             if "Invalid credentials" in reason_str and interaction_type == "login_attempt":
                 await delete_quotex_account(account_doc_id)
                 return None, "Connection Failed: Invalid Credentials. Removed entry."
             elif "check your email" in reason_str.lower() or "verifique seu e-mail" in reason_str.lower() or "pin" in reason_str.lower():
-                 return None, f"Connection Failed: Authentication error ({reason_str}). Check PIN/email or account status."
+                return None, f"Connection Failed: Authentication error ({reason_str}). Check PIN/email or account status."
             elif "token" in reason_str.lower() or "rejected" in reason_str.lower():
-                return None, "Connection Failed: Session token expired/rejected. Stale session deleted."
+                return None, "Stale session deleted. Please tap Add Account once more to log in cleanly."
             else:
-                 return None, f"Connection Failed: {reason_str}"
+                return None, f"Connection Failed: {reason_str}"
 
     except asyncio.TimeoutError:
          logger.error(f"Connection attempt for {email} timed out overall (aggressive patch).")
