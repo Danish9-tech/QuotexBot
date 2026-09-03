@@ -447,36 +447,47 @@ async def handle_potential_pin_input(prompt: str) -> Optional[str]:
 
         pin_code = None
         try:
-            logger.info(f"Asking user {user_id} for PIN via bot.ask() [from patched input]. Timeout: 120s")
-            pin_message = await bot_instance.ask(
+            logger.info(f"Asking user {user_id} for PIN via Telegram listener. Timeout: 300s")
+            try:
+                if hasattr(bot_instance, "stop_listening"):
+                    await bot_instance.stop_listening(chat_id=user_id)
+            except Exception:
+                pass
+
+            await bot_instance.send_message(
                 chat_id=user_id,
                 text=f"❗️ **QUOTEX 2FA REQUIRED** ❗️\n\n"
                      f"To log in to `{qx_client_instance.email}`, Quotex needs the PIN code sent to your email.\n\n"
                      f"**Prompt:**\n`{prompt}`\n\n"
-                     f"➡️ Please reply to **this message** with the **PIN code only**.",
-                timeout=600, # 2 minutes timeout
+                     f"➡️ Please reply with the **6-digit PIN code**."
             )
+
+            pin_message = await bot_instance.listen(
+                chat_id=user_id,
+                timeout=300
+            )
+
             if pin_message and pin_message.text:
                 pin_code = pin_message.text.strip()
-                if not pin_code.isdigit(): # Optional check
+                if not pin_code.isdigit():
                     logger.warning(f"User {user_id} entered non-digit PIN '{pin_code}'. Using it anyway.")
                 logger.info(f"Received PIN '{pin_code}' from user {user_id} via patched input.")
-                await pin_message.delete() # Optional: delete the message after reading
-                return pin_code # Return the actual PIN
+                try: await pin_message.delete()
+                except Exception: pass
+                return pin_code
             else:
-                logger.warning(f"User {user_id} did not provide a PIN response message [via patched input].")
+                logger.warning(f"User {user_id} did not provide a PIN response message.")
                 await bot_instance.send_message(user_id, "❓ Did not receive a PIN response. Login failed.")
-                return "" # Return empty string maybe better than None for input()?
+                return ""
         except asyncio.TimeoutError:
-            logger.error(f"Timeout waiting for PIN from user {user_id} [via patched input].")
-            try: await bot_instance.send_message(user_id, "⏳ PIN request timed out (2 minutes). Login failed.")
+            logger.error(f"Timeout waiting for PIN from user {user_id}.")
+            try: await bot_instance.send_message(user_id, "⏳ PIN request timed out (5 minutes). Login failed.")
             except Exception: pass
-            return "" # Return empty string on timeout
+            return ""
         except Exception as e:
-            logger.error(f"Error occurred in bot.ask() while getting PIN [via patched input] from {user_id}: {e}", exc_info=True)
+            logger.error(f"Error occurred while getting PIN from {user_id}: {e}", exc_info=True)
             try: await bot_instance.send_message(user_id, f"❌ An error occurred while processing your PIN: {e}\nLogin failed.")
             except Exception: pass
-            # Raise exception to clearly signal failure in wrapper
             raise ConnectionError("Failed to get PIN via Telegram interaction.") from e
     else:
         # IMPORTANT: If prompt not recognised, call original input
