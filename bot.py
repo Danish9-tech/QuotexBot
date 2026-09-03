@@ -528,6 +528,24 @@ def input_wrapper(prompt=""):
 
 active_quotex_clients: Dict[str, Quotex] = {}
 
+def clear_stale_quotex_session(email: str):
+    """Purge stale session tokens from pyquotex config and filesystem."""
+    try:
+        from pyquotex.config import update_session
+        update_session(email, {"cookies": None, "token": None, "user_agent": USER_AGENT})
+        logger.info(f"Cleared pyquotex session memory for {email}")
+    except Exception as e:
+        logger.warning(f"Could not update pyquotex session config for {email}: {e}")
+
+    try:
+        for pattern in ["session.json", "qx_session.json", f"session_{email}.json", f"qx_session_{email}.json"]:
+            for f in Path(".").glob(pattern):
+                if f.is_file():
+                    try: f.unlink(missing_ok=True)
+                    except: pass
+    except Exception as err:
+        logger.warning(f"Error purging session files for {email}: {err}")
+
 # --- REPLACE the get_quotex_client function (using the AGGRESSIVE timing with CORRECT patch function) ---
 async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type: str = "info") -> Tuple[Optional[Quotex], str]:
     """
@@ -548,6 +566,11 @@ async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type:
     if not account_details: return None, " Quotex account details not found in DB."
     email = account_details["email"]
     password = account_details["password"]
+
+    # Clear stale sessions if explicitly attempting a fresh login
+    if interaction_type == "login_attempt":
+        logger.info(f"Explicit login attempt for {email}. Purging any old cached sessions...")
+        clear_stale_quotex_session(email)
     # temp_session_path = f"session_{user_id}_{account_doc_id}"
     # # Ensure the directory for session files exists
     # session_dir = Path(temp_session_path).parent
@@ -599,7 +622,7 @@ async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type:
                 break
             else:
                 reason_str = str(connection_reason).lower()
-                if "429" in reason_str or "403" in reason_str or "rejected" in reason_str or "closed" in reason_str:
+                if "429" in reason_str or "403" in reason_str or "closed" in reason_str:
                     logger.warning(f"Host {host_attempt} rejected connection ({connection_reason}). Trying next domain in 3s...")
                     if qx_client:
                         try: await qx_client.close()
@@ -607,7 +630,7 @@ async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type:
                     await asyncio.sleep(3.0)
                     continue
                 else:
-                    # Non-rate-limit error (e.g. invalid credentials or PIN expected), break and process below
+                    # Non-rate-limit error (e.g. invalid credentials, PIN expected, or session rejected), break and process below
                     break
 
         # Deactivate patch state immediately after
@@ -642,15 +665,7 @@ async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type:
             # If authorization was rejected by Quotex, delete stale Quotex json session files so a fresh login is performed
             if any(term in reason_str.lower() for term in ["rejected", "token", "authorization"]):
                 logger.warning("Session token rejected by Quotex. Cleaning up stale Quotex session files and attempting fresh email login...")
-                try:
-                    for s_file in Path(".").glob("session*.json"):
-                        s_file.unlink(missing_ok=True)
-                    for s_file in Path(".").glob("qx_session*.json"):
-                        s_file.unlink(missing_ok=True)
-                    for s_file in Path(".").glob(f"*{email}*"):
-                        s_file.unlink(missing_ok=True)
-                except Exception as clean_err:
-                    logger.warning(f"Could not clean session files: {clean_err}")
+                clear_stale_quotex_session(email)
 
                 # Retry fresh login attempt once after clearing session cache
                 try:
