@@ -80,9 +80,9 @@ git pull && sed -i 's/API_ID=2040/API_ID=17349/g' .env && sed -i 's/API_HASH=b18
 ## 3.1 Bypassing Cloudflare HTTP 403 WebSocket Blocks with Cloudflare WARP
 If Cloudflare blocks DigitalOcean's IP address on WebSocket connections (`HTTP 403`), install Cloudflare's free WARP tunnel to route outgoing VPS traffic through Cloudflare's trusted residential edge network.
 
-**1-Click Installation & Activation:**
+**1-Click Installation & Activation (Safe SOCKS5 Proxy Mode):**
 ```bash
-curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg && echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/cloudflare-client.list && apt-get update && apt-get install cloudflare-warp -y && warp-cli registration new && warp-cli connect
+curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg && echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/cloudflare-client.list && apt-get update && apt-get install cloudflare-warp -y && warp-cli registration new && warp-cli mode proxy && warp-cli connect
 ```
 
 ---
