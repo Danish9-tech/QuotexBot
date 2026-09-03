@@ -52,11 +52,25 @@ except ImportError:
 
 # --- pyquotex Imports ---
 try:
-    from pyquotex.stable_api import Quotex
+    from pyquotex.stable_api import Quotex, AuthStatus
     from pyquotex.utils.processor import get_color # Optional
-    # Monkey patch target detection function (safer approach)
-    # --- Inside your script, replace the existing function ---
-    
+
+    # --- Patch Quotex._check_connect timeout from 2s to 15s for VPS latency ---
+    @staticmethod
+    async def _patched_check_connect(state: Any) -> bool:
+        from pyquotex._api._waits import wait_until
+        try:
+            await wait_until(
+                lambda: state.auth_status == AuthStatus.AUTHENTICATED,
+                timeout=15.0,
+                poll_interval=0.1,
+            )
+            return True
+        except asyncio.TimeoutError:
+            return state.auth_status == AuthStatus.AUTHENTICATED
+
+    Quotex._check_connect = _patched_check_connect
+    print(f"{Fore.GREEN}Successfully patched Quotex._check_connect timeout to 15s for high-latency connections.{Style.RESET_ALL}")
 except ImportError:
     print(f"{Fore.RED}Error: pyquotex library not found or import failed.")
     print(f"{Fore.YELLOW}Please install it via pip:")
@@ -692,7 +706,7 @@ async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type:
             elif "check your email" in reason_str.lower() or "verifique seu e-mail" in reason_str.lower() or "pin" in reason_str.lower():
                 return None, f"Connection Failed: Authentication error ({reason_str}). Check PIN/email or account status."
             elif "token" in reason_str.lower() or "rejected" in reason_str.lower():
-                return None, "Stale session deleted. Please tap Add Account once more to log in cleanly."
+                return None, f"Connection Failed: {reason_str}. Stale session cleared."
             else:
                 return None, f"Connection Failed: {reason_str}"
 
