@@ -625,11 +625,11 @@ async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type:
             try:
                 connection_check, connection_reason = await asyncio.wait_for(
                     qx_client.connect(),
-                    timeout=120.0
+                    timeout=300.0
                 )
             except asyncio.TimeoutError:
                 logger.error(f"Connection attempt to {host_attempt} timed out.")
-                connection_check, connection_reason = False, f"Timeout during connection on {host_attempt}"
+                connection_check, connection_reason = False, f"Timeout waiting for 2FA PIN input on {host_attempt}"
             except Exception as e:
                 logger.error(f"Error during connection to {host_attempt}: {e}", exc_info=True)
                 connection_check, connection_reason = False, str(e)
@@ -695,7 +695,7 @@ async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type:
                         host="market-qx.trade",
                         on_otp_callback=handle_potential_pin_input
                     )
-                    conn_check2, conn_reason2 = await asyncio.wait_for(qx_client_fresh.connect(), timeout=120.0)
+                    conn_check2, conn_reason2 = await asyncio.wait_for(qx_client_fresh.connect(), timeout=300.0)
                     if conn_check2:
                         logger.info(f"Fresh login successful for {email} after clearing stale session.")
                         active_quotex_clients[account_doc_id] = qx_client_fresh
