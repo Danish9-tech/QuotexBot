@@ -571,6 +571,21 @@ def clear_stale_quotex_session(email: str):
     except Exception as err:
         logger.warning(f"Error purging session files for {email}: {err}")
 
+def get_quotex_proxies() -> Optional[Dict[str, str]]:
+    proxy_url = os.getenv("QUOTEX_PROXY")
+    if proxy_url:
+        return {"http": proxy_url, "https": proxy_url}
+    try:
+        import socket
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.5)
+            if s.connect_ex(("127.0.0.1", 4001)) == 0:
+                logger.info("Detected active Cloudflare WARP proxy on 127.0.0.1:4001. Routing Quotex traffic via WARP proxy.")
+                return {"http": "socks5://127.0.0.1:4001", "https": "socks5://127.0.0.1:4001"}
+    except Exception:
+        pass
+    return None
+
 # --- REPLACE the get_quotex_client function (using the AGGRESSIVE timing with CORRECT patch function) ---
 async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type: str = "info") -> Tuple[Optional[Quotex], str]:
     """
