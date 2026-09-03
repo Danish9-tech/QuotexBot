@@ -597,9 +597,12 @@ async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type:
     is_patched = False
 
     try:
-        # Multi-host fallback list to bypass Cloudflare / HTTP 429 rate limiting on DigitalOcean
+        # Multi-host fallback list to bypass Cloudflare / HTTP 429 / 403 rate limiting on DigitalOcean
+        default_order = ["market-qx.trade", "qxbroker.com", "quotex.io", "qx-market.com"]
         env_host = os.getenv("QUOTEX_HOST", "market-qx.trade")
-        default_order = ["market-qx.trade", "qxbroker.com", "quotex.io"]
+        # Ensure market-qx.trade is prioritized if default env_host is qxbroker.com
+        if env_host == "qxbroker.com":
+            env_host = "market-qx.trade"
         host_candidates = [env_host] + [h for h in default_order if h != env_host]
 
         for host_attempt in host_candidates:
@@ -635,9 +638,12 @@ async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type:
                 logger.info(f"Successfully connected to Quotex via host: {host_attempt}")
                 break
             else:
-                reason_str = str(connection_reason).lower()
-                if "429" in reason_str or "403" in reason_str or "closed" in reason_str:
-                    logger.warning(f"Host {host_attempt} rejected connection ({connection_reason}). Trying next domain in 3s...")
+                ws_err_obj = getattr(getattr(qx_client, 'api', None), 'state', None)
+                ws_err_msg = str(getattr(ws_err_obj, 'websocket_error_reason', ''))
+                combined_reason = f"{connection_reason} {ws_err_msg}".lower()
+                
+                if "429" in combined_reason or "403" in combined_reason or "closed" in combined_reason:
+                    logger.warning(f"Host {host_attempt} rejected WebSocket connection ({connection_reason} / {ws_err_msg}). Trying next domain in host fallback list in 3s...")
                     if qx_client:
                         try: await qx_client.close()
                         except: pass
@@ -686,7 +692,7 @@ async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type:
                     qx_client_fresh = Quotex(
                         email=email, 
                         password=password, 
-                        host=host_attempt,
+                        host="market-qx.trade",
                         on_otp_callback=handle_potential_pin_input
                     )
                     conn_check2, conn_reason2 = await asyncio.wait_for(qx_client_fresh.connect(), timeout=120.0)
