@@ -622,6 +622,7 @@ async def get_quotex_client(user_id: int, account_doc_id: str, interaction_type:
                 email=email, 
                 password=password, 
                 host=host_attempt,
+                proxies=get_quotex_proxies(),
                 on_otp_callback=handle_potential_pin_input
             )
 
